@@ -226,7 +226,7 @@ with st.form("health_check_form", clear_on_submit=False):
     business = st.text_input("Business Name", placeholder="e.g., Comfort Keepers")
     home_city = st.text_input("Home City", placeholder="e.g., Tampa")
     state = st.selectbox("State", US_STATES, index=US_STATES.index("FL"))
-    second_city = st.text_input("Second City", placeholder="e.g., Plant City")
+    second_city = st.text_input("Second City (optional)", placeholder="leave blank to skip")
     third_city = st.text_input("Third City (optional)", placeholder="leave blank to skip")
     submitted = st.form_submit_button("Run Health Check", type="primary")
 
@@ -253,7 +253,6 @@ def _validate(values):
         ("Business Name", "business"),
         ("Home City", "home_city"),
         ("State", "state"),
-        ("Second City", "second_city"),
     ]:
         if not values.get(key):
             missing.append(label)
@@ -277,7 +276,9 @@ if st.session_state.get("scan_started") and not st.session_state.get("scan_done"
         )
         st.session_state["scan_started"] = False
     else:
-        cities = [values["home_city"], values["second_city"]]
+        cities = [values["home_city"]]
+        if values["second_city"]:
+            cities.append(values["second_city"])
         if values["third_city"]:
             cities.append(values["third_city"])
 
