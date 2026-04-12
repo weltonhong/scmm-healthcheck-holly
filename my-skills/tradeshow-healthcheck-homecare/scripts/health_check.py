@@ -170,9 +170,28 @@ def is_generic_title(title):
     return len(non_generic) == 0
 
 
+# Atomic word dictionary for splitting concatenated domain names like
+# 'ssmhealthathome' into 'ssm health at home'. Only atomic words (no
+# compounds like 'homecare') so multi-word domains split fully.
+_DOMAIN_WORD_SPLITS = sorted([
+    "care", "home", "health", "senior", "family", "services", "service",
+    "agency", "living", "helpers", "instead", "angels", "keepers",
+    "brightstar", "visiting", "comfort", "always", "best", "caring",
+    "support", "elderly", "adult", "nursing", "medical", "private",
+    "duty", "personal", "quality", "trusted", "professional", "premier",
+    "preferred", "golden", "blessed", "loving", "hearts", "heart",
+    "hands", "touch", "right", "my", "your", "our", "at", "of", "for",
+    "and", "the",
+], key=len, reverse=True)
+
+_SHORT_PARTICLES = {"at", "of", "my"}
+
+
 def humanize_domain(domain):
-    """Convert 'home-instead.com' -> 'Home Instead'. Imperfect for compound
-    words but always better than a generic title."""
+    """Convert 'home-instead.com' -> 'Home Instead'. Also splits
+    camelCase-ish concatenated domains like 'ssmhealthathome' using a
+    greedy word dictionary so we get 'SSM Health At Home' rather than
+    'Ssmhealthathome'."""
     if not domain:
         return ""
     domain = re.sub(r"^https?://", "", domain)
@@ -181,7 +200,29 @@ def humanize_domain(domain):
     parts = host.split(".")
     sld = parts[-2] if len(parts) >= 2 else parts[0]
     pieces = [p for p in re.split(r"[-_]", sld) if p]
-    return " ".join(p.capitalize() for p in pieces)
+    expanded = []
+    for p in pieces:
+        remaining = p.lower()
+        found_any = True
+        segments = []
+        while remaining and found_any:
+            found_any = False
+            for word in _DOMAIN_WORD_SPLITS:
+                if not remaining.endswith(word):
+                    continue
+                if len(remaining) < len(word):
+                    continue
+                stub_len = len(remaining) - len(word)
+                if word in _SHORT_PARTICLES and stub_len > 0 and stub_len < 3:
+                    continue
+                segments.insert(0, word)
+                remaining = remaining[: -len(word)]
+                found_any = True
+                break
+        if remaining:
+            segments.insert(0, remaining)
+        expanded.extend(segments if segments else [p])
+    return " ".join(p.capitalize() for p in expanded)
 
 
 def display_name_from_result(result):
@@ -433,23 +474,50 @@ def check_seo_per_city(business, website, cities, state):
                 "ads": match.get("ads") or [],
                 "error": match["error"],
             }
+        # DEBUG: print raw scraper output so we can trace why SEO names
+        # sometimes come through as page titles instead of business names.
+        raw_results = match.get("results") or []
+        print(f"[DEBUG SEO {city}] raw results count: {len(raw_results)}")
+        for i, r in enumerate(raw_results[:6]):
+            print(
+                f"[DEBUG SEO {city}] #{i+1}: "
+                f"domain={r.get('domain')!r} "
+                f"title={(r.get('title') or '')[:80]!r}"
+            )
+        sys.stdout.flush()
+
         # Filter to real home care agency websites only -- skip directories,
         # info articles, and gov/medical sites. For each kept result, use the
         # branded title when present, else humanize the domain (so "Home Care"
         # generic titles fall back to e.g. "Acti Kare").
         top_3 = []
-        for r in (match.get("results") or []):
+        for r in raw_results:
             if is_real_agency_result(r):
                 name = display_name_from_result(r)
+                print(
+                    f"[DEBUG SEO {city}] KEEP domain={r.get('domain')!r} "
+                    f"-> display_name={name!r}"
+                )
                 if name:
                     top_3.append(name)
                     if len(top_3) >= 3:
                         break
+        sys.stdout.flush()
+
+        raw_ads = match.get("ads") or []
+        print(f"[DEBUG ADS {city}] raw ads count: {len(raw_ads)}")
+        for i, a in enumerate(raw_ads[:8]):
+            print(
+                f"[DEBUG ADS {city}] #{i+1}: "
+                f"name={a.get('name')!r} domain={a.get('domain')!r}"
+            )
+        sys.stdout.flush()
+
         return city, {
             "query": query,
             "rank": match.get("rank"),
             "top_3": top_3,
-            "ads": match.get("ads") or [],
+            "ads": raw_ads,
             "local_pack": match.get("local_pack") or {
                 "rank": None, "in_3_pack": False, "top_3": []
             },

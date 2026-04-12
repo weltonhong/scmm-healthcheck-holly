@@ -65,9 +65,14 @@ def _hydrate_env_from_secrets():
 
 _hydrate_env_from_secrets()
 
-# Now safe to import the scoring scripts
+# Now safe to import the scoring scripts.
+# Force a fresh reload on every Streamlit rerun so the app picks up code
+# changes after a git push without requiring a full container reboot.
+import importlib  # noqa: E402
 import health_check  # noqa: E402
 import pdf_generator  # noqa: E402
+importlib.reload(health_check)
+importlib.reload(pdf_generator)
 
 
 # ----------------------------------------------------------------------------
