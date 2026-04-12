@@ -277,6 +277,11 @@ def parse_ads_from_html(html):
         "available", "availability", "information", "info", "details",
         "compare", "comparison", "reviews", "ratings", "offers", "offer",
         "solutions", "solution",
+        # Generic adjectives commonly used in ad headlines
+        "local", "nearby", "area", "nationwide", "national", "licensed",
+        "insured", "certified", "bonded", "experienced", "reliable",
+        "safe", "caring", "dedicated", "compassionate", "hourly",
+        "overnight", "daily", "weekly", "monthly", "247", "24",
     }
 
     def is_generic_ad_text(text):

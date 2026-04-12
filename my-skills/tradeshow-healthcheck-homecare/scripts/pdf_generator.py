@@ -837,7 +837,7 @@ def build_pdf(results):
         d = ads.get(c) or {}
         if d.get("prospect_running_ads"):
             business_running_anywhere = True
-        advs = d.get("all_advertisers") or []
+        advs = (d.get("all_advertisers") or [])[:3]
         if advs:
             ads_lines.append(f"<b>{c}:</b> {', '.join(advs)}")
         else:
