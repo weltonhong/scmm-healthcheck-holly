@@ -713,10 +713,16 @@ def build_pdf(results):
 
     rc = target.get("review_count")
     rating = target.get("rating")
+    maps_url = target.get("maps_url") or ""
     reviews_detail = (
         f"<b>{rc if rc is not None else '-'}</b> reviews, "
         f"<b>{rating if rating is not None else '-'}</b> stars"
     )
+    if maps_url:
+        reviews_detail += (
+            f'  <a href="{maps_url}" color="#29ABE2">'
+            f'<u>View Reviews</u></a>'
+        )
 
     # Show top 3 competitors with review counts, not just top 1.
     intel_comps = (results.get("google_intel") or {}).get("competitors") or []
