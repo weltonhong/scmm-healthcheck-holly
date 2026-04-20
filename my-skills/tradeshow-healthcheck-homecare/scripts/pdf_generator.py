@@ -43,7 +43,7 @@ SCMM_LOGO_PATH = (
 )
 
 CALENDLY_URL = (
-    "https://calendly.com/vickey-lopez/vickeylopezseniormarketingspecialist"
+    "https://calendly.com/holly-rehbock-/1-hour-meeting?back=1"
 )
 
 
