@@ -46,6 +46,13 @@ CALENDLY_URL = (
     "https://calendly.com/holly-rehbock-/1-hour-meeting?back=1"
 )
 
+# Rep block printed on every page of the CTA footer. Each deploy repo
+# overrides REP_NAME, REP_EMAIL, and CALENDLY_URL above to match its
+# sales rep. BRAND_LINE stays the same across SCMM deploys.
+REP_NAME = "Holly Rehbock"
+REP_EMAIL = "Holly.Rehbock@RingRingMarketing.com"
+BRAND_LINE = "Senior Care Marketing Max  |  (888) 383-2848"
+
 
 def generate_qr_png_bytes(url):
     """Build a high-error-correction QR PNG and return its raw bytes."""
@@ -113,7 +120,7 @@ class CTAFooterCanvas(pdfcanvas.Canvas):
 
     def _draw_footer(self, with_qr=False):
         page_w, _ = self._pagesize
-        bar_h = 1.45 * inch
+        bar_h = 1.85 * inch
         bar_y = 0.35 * inch
         margin = 0.6 * inch
         bar_w = page_w - 2 * margin
@@ -122,16 +129,13 @@ class CTAFooterCanvas(pdfcanvas.Canvas):
         self.setFillColor(SCMM_LOGO_BLUE)
         self.rect(margin, bar_y, bar_w, bar_h, fill=1, stroke=0)
 
-        # QR sizing constants
-        qr_size = 0.8 * inch
+        qr_size = 0.85 * inch
         qr_gap = 0.3 * inch
-        qr_right_pad = 0.18 * inch
+        qr_right_pad = 0.2 * inch
         text_left_pad = 0.25 * inch
 
         draw_qr = bool(with_qr and CTAFooterCanvas.qr_png_bytes)
 
-        # Carve out the text area. With QR: leave a strict 0.3" gap to its
-        # left edge. Without QR: keep text centered like always.
         if draw_qr:
             text_left = margin + text_left_pad
             text_right = margin + bar_w - qr_right_pad - qr_size - qr_gap
@@ -141,50 +145,46 @@ class CTAFooterCanvas(pdfcanvas.Canvas):
 
         self.setFillColor(colors.white)
 
-        # Same 4-line content on both layouts so the text never overflows the
-        # bar at the long line. Page-with-QR is left-aligned in the narrowed
-        # text area; page-without-QR is centered in the same text area
-        # (matching the padding on the right so both pages look balanced).
-        if draw_qr:
-            line1 = ("Helvetica-Bold", 11,
-                     "Every week these gaps stay open, your competitors get")
-            line2 = ("Helvetica-Bold", 11,
-                     "stronger and your phone stays quiet.")
-            line3 = ("Helvetica", 10,
-                     "We close these gaps for home care agencies like yours.")
-            line4 = ("Helvetica-Bold", 13,
-                     "Call today.  (888) 383-2848  |  www.SeniorCareMarketingMax.com")
-        else:
-            line1 = ("Helvetica-Bold", 11,
-                     "Every week these gaps stay open, your competitors")
-            line2 = ("Helvetica-Bold", 11,
-                     "get stronger and your phone stays quiet.")
-            line3 = ("Helvetica", 10,
-                     "We close these gaps for home care agencies like yours.")
-            line4 = ("Helvetica-Bold", 13,
-                     "Call today.  (888) 383-2848  |  www.SeniorCareMarketingMax.com")
-
-        lines = [
-            (line1[0], line1[1], line1[2], bar_y + bar_h - 22),
-            (line2[0], line2[1], line2[2], bar_y + bar_h - 38),
-            (line3[0], line3[1], line3[2], bar_y + bar_h - 56),
-            (line4[0], line4[1], line4[2], bar_y + 18),
+        # 3 tagline lines on top + 3 contact lines on bottom. Same content
+        # on both pages so the rep block (name, email, brand) renders on
+        # page 1 AND page 2; only the QR is conditional.
+        tagline = [
+            ("Helvetica-Bold", 11,
+             "Every week these gaps stay open, your competitors get"),
+            ("Helvetica-Bold", 11,
+             "stronger and your phone stays quiet."),
+            ("Helvetica", 10,
+             "We close these gaps for home care agencies like yours.  Call today."),
+        ]
+        contact = [
+            ("Helvetica-Bold", 11.5, f"{REP_NAME}, Sales Consultant"),
+            ("Helvetica", 10, REP_EMAIL),
+            ("Helvetica-Bold", 11.5, BRAND_LINE),
         ]
 
+        positions = [
+            bar_y + bar_h - 20,   # tagline 1
+            bar_y + bar_h - 35,   # tagline 2
+            bar_y + bar_h - 51,   # tagline 3
+            bar_y + 52,           # contact 1
+            bar_y + 35,           # contact 2
+            bar_y + 18,           # contact 3
+        ]
+
+        all_lines = tagline + contact
         text_center_x = (text_left + text_right) / 2
-        for font, size, text, y in lines:
+        for (font, size, text), y in zip(all_lines, positions):
             self.setFont(font, size)
             if draw_qr:
                 self.drawString(text_left, y, text)
             else:
                 self.drawCentredString(text_center_x, y, text)
 
-        # QR code (last page only)
+        # QR code (last page only). Top-aligned in the right region so it
+        # doesn't collide with the contact block on the bottom-left.
         if draw_qr:
-            label_h = 0.22 * inch
-            content_h = qr_size + label_h
             qr_x = margin + bar_w - qr_size - qr_right_pad
-            qr_y = bar_y + (bar_h - content_h) / 2 + label_h
+            qr_y = bar_y + bar_h - qr_size - 0.18 * inch
             try:
                 img = ImageReader(io.BytesIO(CTAFooterCanvas.qr_png_bytes))
                 self.drawImage(
@@ -193,16 +193,15 @@ class CTAFooterCanvas(pdfcanvas.Canvas):
                 )
             except Exception:
                 pass
-            # Two-line label below the QR
             self.setFillColor(colors.white)
-            self.setFont("Helvetica-Bold", 7)
+            self.setFont("Helvetica-Bold", 7.5)
             label_cx = qr_x + qr_size / 2
             self.drawCentredString(
-                label_cx, qr_y - 9,
+                label_cx, qr_y - 10,
                 "Scan to schedule your",
             )
             self.drawCentredString(
-                label_cx, qr_y - 18,
+                label_cx, qr_y - 19,
                 "free strategy session",
             )
 
@@ -576,7 +575,7 @@ def build_pdf(results):
         leftMargin=0.6 * inch,
         rightMargin=0.6 * inch,
         topMargin=0.5 * inch,
-        bottomMargin=1.95 * inch,  # leave room for the CTA footer bar (1.45in tall)
+        bottomMargin=2.35 * inch,  # accommodates the 1.85in CTA footer + gap
         title=f"Online Health Check - {business}",
         author="Senior Care Marketing Max",
     )
