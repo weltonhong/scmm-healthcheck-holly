@@ -47,6 +47,7 @@ except Exception:
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 import website_audit  # noqa: E402
+import name_matcher  # noqa: E402
 
 
 PLACES_API_URL = "https://places.googleapis.com/v1/places:searchText"
@@ -727,7 +728,7 @@ def build_ads_per_city(business, competitors, seo_per_city, prospect_website="")
             seen.add(key)
             names.append(name)
 
-        # Domain-only prospect detection. Walk the raw ads_list (not the
+        # 1) Domain-only prospect detection. Walk the raw ads_list (not the
         # deduped names) so we can compare each ad's display domain against
         # the prospect's actual website.
         prospect_match = None
@@ -736,6 +737,18 @@ def build_ads_per_city(business, competitors, seo_per_city, prospect_website="")
                 ad_domain = normalize_domain((adv or {}).get("domain", ""))
                 if ad_domain and ad_domain == prospect_domain:
                     prospect_match = (adv or {}).get("name", ad_domain)
+                    break
+        # 2) Name-based fallback: many SERP scrapers fail to extract the
+        # advertiser's display domain, leaving the domain field empty.
+        # Without a name fallback the scorecard prints "Not running"
+        # even when the prospect's name is sitting in the ad block.
+        if not prospect_match and business:
+            for adv in ads_list:
+                adv_name = (adv or {}).get("name", "")
+                if not adv_name:
+                    continue
+                if name_matcher.name_matches(business, adv_name):
+                    prospect_match = adv_name
                     break
 
         # Competitors keep the loose name matcher -- false positives there

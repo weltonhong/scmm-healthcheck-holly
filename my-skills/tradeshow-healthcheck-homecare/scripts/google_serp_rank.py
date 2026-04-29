@@ -44,6 +44,10 @@ import requests
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Ensure the sibling name_matcher.py can be imported when this script
+# runs as a subprocess.
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
 SHARED_COOKIE_FILE = os.path.join(
     SCRIPT_DIR, "..", "..", "pre-call-audit", "scripts", ".google_cookies.json"
 )
@@ -107,25 +111,19 @@ def get_scrapingbee_key():
 
 # ----------------------------- name matching -----------------------------
 
+# Delegate to the shared deathcare/senior-care normalized matcher so
+# variants like "Visiting Angels" vs "Visiting Angels of Tampa Bay"
+# resolve correctly in both the local-pack matcher and the Google Ads
+# matcher.
+import name_matcher  # noqa: E402  (sibling module on sys.path)
+
 
 STOPWORDS = {"&", "and", "the", "of", "inc", "llc", "co", "corp", "company"}
 
 
 def name_matches(text, business_name):
-    if not business_name:
-        return False
-    text = (text or "").lower()
-    bn = business_name.lower()
-    if bn in text:
-        return True
-    words = [w for w in re.split(r"\s+", bn) if w and w not in STOPWORDS]
-    if len(words) >= 3:
-        partial = " ".join(words[:3])
-        if partial in text:
-            return True
-    if len(words) == 2 and " ".join(words) in text:
-        return True
-    return False
+    """SERP entry / ad name matcher. Symmetric — accepts either order."""
+    return name_matcher.name_matches(text, business_name)
 
 
 # ----------------------------- ScrapingBee path -----------------------------
