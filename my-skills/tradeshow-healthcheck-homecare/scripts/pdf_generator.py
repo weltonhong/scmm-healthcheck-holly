@@ -43,14 +43,14 @@ SCMM_LOGO_PATH = (
 )
 
 CALENDLY_URL = (
-    "https://calendly.com/holly-rehbock-/1-hour-meeting?back=1"
+    "https://calendly.com/vickey-lopez/vickeylopezseniormarketingspecialist"
 )
 
 # Rep block printed on every page of the CTA footer. Each deploy repo
 # overrides REP_NAME, REP_EMAIL, and CALENDLY_URL above to match its
 # sales rep. BRAND_LINE stays the same across SCMM deploys.
-REP_NAME = "Holly Rehbock"
-REP_EMAIL = "Holly.Rehbock@RingRingMarketing.com"
+REP_NAME = "Vickey Lopez"
+REP_EMAIL = "Vickey.Lopez@RingRingMarketing.com"
 BRAND_LINE = "Senior Care Marketing Max  |  (888) 383-2848"
 
 
@@ -299,7 +299,13 @@ def estimate_lost_calls(results):
     for c in cities:
         pop = get_city_population(c, state)
         mult = _pop_multiplier(pop)
-        if not (pack_results.get(c) or {}).get("in_3_pack"):
+        pack_c = pack_results.get(c) or {}
+        # A city whose SERP fetch failed contributes NOTHING. Charging it as a
+        # missed 3-Pack would put an invented number on a branded PDF handed to
+        # a prospect. Skipping understates; inventing is not an option.
+        if pack_c.get("error"):
+            continue
+        if not pack_c.get("in_3_pack"):
             low += 5 * mult
             high += 10 * mult
         d = ads_per_city.get(c) or {}
@@ -329,11 +335,15 @@ def count_gaps(results):
 
     n = 0
     for c in cities:
-        if not (pack_results.get(c) or {}).get("in_3_pack"):
+        pack_c = pack_results.get(c) or {}
+        seo_c = seo.get(c) or {}
+        # An unscanned city is not a gap. See estimate_lost_calls.
+        if not pack_c.get("error") and not pack_c.get("in_3_pack"):
             n += 1
-        rank = (seo.get(c) or {}).get("rank")
-        if rank is None or rank > 10:
-            n += 1
+        if not seo_c.get("error"):
+            rank = seo_c.get("rank")
+            if rank is None or rank > 10:
+                n += 1
         d = ads_per_city.get(c) or {}
         comps = d.get("competitors_running_ads") or []
         if comps and not d.get("prospect_running_ads"):
@@ -346,6 +356,41 @@ def count_gaps(results):
         n += 1
 
     return n
+
+
+# Map-pack rows carry THREE states, not two, and the difference decides
+# whether anything may be said about the prospect.
+#
+#   UNSCANNED          the fetch failed. Neither a finding nor a non-finding.
+#   NO_PACK            Google served no local pack for that search at all.
+#                      There is nothing to be absent from, so it is not a gap
+#                      and no competitor "owns the map" there.
+#   IN_PACK            the prospect is in it.
+#   ABSENT_FROM_PACK   a pack exists and the prospect is not in it. The only
+#                      one of the four that is a finding about the prospect.
+#
+# `in_3_pack` alone cannot tell NO_PACK from ABSENT_FROM_PACK: it is False for
+# both. Every selector below keys on this function instead.
+UNSCANNED = "UNSCANNED"
+NO_PACK = "NO_PACK"
+IN_PACK = "IN_PACK"
+ABSENT_FROM_PACK = "ABSENT_FROM_PACK"
+
+
+def pack_status(pack_row):
+    """Which of the four states this map-pack row is in."""
+    row = pack_row or {}
+    if row.get("error"):
+        return UNSCANNED
+    if row.get("in_3_pack"):
+        return IN_PACK
+    if not [t for t in (row.get("top_3") or []) if t]:
+        # No pack was served. Measured 2026-08-20 across 27 real
+        # vertical/market queries: a genuinely packless search did not occur
+        # once, so this state is almost always a measurement problem rather
+        # than a fact about the market. Either way it is not a gap.
+        return NO_PACK
+    return ABSENT_FROM_PACK
 
 
 def build_adaptive_hook(results, overall, low, high):
@@ -374,13 +419,22 @@ def build_adaptive_hook(results, overall, low, high):
         winning = []
         losing = []
         for c in cities:
-            in_pack = (pack_results.get(c) or {}).get("in_3_pack")
-            seo_rank = (seo.get(c) or {}).get("rank")
-            in_seo = seo_rank is not None and seo_rank <= 10
-            if in_pack or in_seo:
+            pack_c = pack_results.get(c) or {}
+            seo_c = seo.get(c) or {}
+            # PER AXIS. The old guard skipped only when BOTH axes errored, so a
+            # row with an unscanned SEO and no map pack landed in `losing` on
+            # zero measurement and was named in the headline as somewhere
+            # competitors are found instead of the prospect.
+            status = pack_status(pack_c)
+            seo_measured = not seo_c.get("error")
+            seo_rank = seo_c.get("rank")
+            in_seo = seo_measured and seo_rank is not None and seo_rank <= 10
+            seo_gap = seo_measured and not in_seo
+            if status == IN_PACK or in_seo:
                 winning.append(c)
-            else:
+            elif status == ABSENT_FROM_PACK or seo_gap:
                 losing.append(c)
+            # Otherwise nothing was measurable on either axis: neither column.
 
         if winning and losing:
             win_city = winning[0]
@@ -465,8 +519,17 @@ def _build_recommendations_top2(results):
     candidates = []
 
     # ----- 3-Pack: name the competitors that own the map ------------------
+    # Unscanned cities are excluded: naming a competitor as owning the map in
+    # a city whose SERP never came back is a fabricated finding, and it also
+    # inflates the score below.
+    # ABSENT_FROM_PACK only, which means every entry is guaranteed to
+    # have a top_3 to name. The old list also admitted rows where no
+    # pack existed; because the consumer below took [0] and gave up if
+    # it had no top_3, a single packless home city SUPPRESSED the whole
+    # bullet -- and with it two genuine, nameable gaps in other cities.
     missing_packs = [
-        c for c in cities if not (pack_results.get(c) or {}).get("in_3_pack")
+        c for c in cities
+        if pack_status(pack_results.get(c)) == ABSENT_FROM_PACK
     ]
     if missing_packs:
         target_city = missing_packs[0]
@@ -757,19 +820,29 @@ def build_pdf(results):
 
     pack_results = pack.get("results") or {}
 
-    def pack_status(d):
+    def pack_cell(d):
+        """The display string for one map-pack row.
+
+        NOT the module-level pack_status, which returns a STATE. Two
+        functions of one name in one file, returning different kinds of
+        thing, is a trap for the next reader; this one is the renderer.
+        """
         if not d or "error" in d:
             return "ERROR"
         top_3 = d.get("top_3") or []
         if not top_3:
-            return "No local map pack found for this city"
+            if d.get("confirmed_empty"):
+                return "Google shows no map pack for this search"
+            # Not confirmed. Deliberately says nothing about the prospect:
+            # a rep reads this row out loud to them.
+            return "Map results unconfirmed for this search"
         top_3_str = ", ".join(top_3[:3])
         if d.get("in_3_pack"):
             return f"FOUND rank {d.get('rank')} (Top 3: {top_3_str})"
         return f"NOT FOUND (Top 3: {top_3_str})"
 
     pack_lines_html = [
-        f"<b>{c}:</b> {pack_status(pack_results.get(c))}" for c in cities
+        f"<b>{c}:</b> {pack_cell(pack_results.get(c))}" for c in cities
     ]
     pack_detail = "<br/>".join(pack_lines_html)
 
@@ -791,6 +864,12 @@ def build_pdf(results):
         rank = d.get("rank")
         top_3 = d.get("top_3") or []
         cleaned = [trim_title(t) for t in top_3[:3] if t]
+        if d.get("error"):
+            # The prospect is handed this PDF. A failed fetch must not appear
+            # on it as a finding about their rankings.
+            seo_lines_html.append(
+                f"<b>{c}:</b> ERROR ({str(d.get('error'))[:60]})")
+            continue
         if not cleaned:
             seo_lines_html.append(
                 f"<b>{c}:</b> No organic results found for this city"
@@ -837,7 +916,12 @@ def build_pdf(results):
         if d.get("prospect_running_ads"):
             business_running_anywhere = True
         advs = (d.get("all_advertisers") or [])[:3]
-        if advs:
+        if d.get("error"):
+            # The prospect is handed this PDF. A failed fetch must not appear
+            # on it as a finding about their advertising.
+            ads_lines.append(
+                f"<b>{c}:</b> ERROR ({str(d.get('error'))[:60]})")
+        elif advs:
             ads_lines.append(f"<b>{c}:</b> {', '.join(advs)}")
         else:
             ads_lines.append(f"<b>{c}:</b> No ads detected")

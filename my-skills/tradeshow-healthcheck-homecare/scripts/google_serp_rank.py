@@ -129,8 +129,39 @@ def name_matches(text, business_name):
 # ----------------------------- ScrapingBee path -----------------------------
 
 
+# A real render_js Google SERP is hundreds of KB. ScrapingBee returns HTTP 200
+# with an empty or URL-echo stub body during an outage, so status alone cannot
+# detect a failed fetch.
+#
+# Why this guard exists: on the 2026-07-24 tag-2615 batch, 219 of 500 fetches
+# (44%) came back as stubs. The parsers extracted nothing and the result
+# rendered as "Not found" / "not in the 3-Pack" -- indistinguishable from a
+# genuine ranking absence, and read aloud to a prospect standing at the booth.
+# A failed fetch must RAISE so the caller records an explicit error.
+#
+# Keep in sync with quick-intel-ranking/scripts/serp_helpers.py, which owns the
+# original of this guard. These skills are deliberately self-contained (each
+# deploys to its own clean-slice Streamlit repo), so the copy is intentional --
+# test_serp_guard_parity.py asserts the copies agree.
+MIN_SERP_BYTES = 100_000
+
+
+def _validate_serp_body(html):
+    """Return an error string if this body is not a usable SERP, else None."""
+    if not html or not html.strip():
+        return "empty body (0 bytes)"
+    if len(html) < MIN_SERP_BYTES:
+        return f"stub body ({len(html)} bytes < {MIN_SERP_BYTES})"
+    return None
+
+
 def fetch_serp_scrapingbee(query, city, api_key, timeout=120):
-    """Fetch a Google SERP via ScrapingBee custom_google. Returns markdown body."""
+    """Fetch a Google SERP via ScrapingBee custom_google. Returns markdown body.
+
+    Raises RuntimeError if the response is not a usable SERP, so the caller
+    records an explicit error rather than treating an empty page as "no
+    rankings found".
+    """
     uule = generate_uule(city)
     is_near_me = "near me" in query.lower()
     search_url = (
@@ -158,6 +189,9 @@ def fetch_serp_scrapingbee(query, city, api_key, timeout=120):
     )
     if r.status_code != 200:
         raise RuntimeError(f"ScrapingBee HTTP {r.status_code}: {r.text[:200]}")
+    bad = _validate_serp_body(r.text)
+    if bad is not None:
+        raise RuntimeError(f"ScrapingBee returned an unusable SERP: {bad}")
     return r.text
 
 
@@ -388,6 +422,22 @@ def parse_ads_from_html(html):
         if name.lower() in seen:
             continue
         seen.add(name.lower())
+        # An advertiser with NO display domain is not an ad.
+        #
+        # Measured 2026-08-18 on two independently sourced SERPs of the same
+        # query (DataForSEO and ScrapingBee), both containing ZERO occurrences
+        # of "Sponsored" and zero paid results: this function returned the
+        # three LOCAL PACK businesses as advertisers, each with domain="".
+        # Downstream that becomes "competitors_running_ads", so a booth PDF
+        # named three real competitors as advertisers when nobody was
+        # advertising. A fabricated, named finding shown to a prospect.
+        #
+        # Every genuine Google ad renders a display URL, so requiring one
+        # removes the phantoms. It can only ever UNDER-report (an ad whose
+        # cite extraction fails is dropped), which is the correct direction:
+        # skipping beats guessing on a sales-facing claim.
+        if not display_domain:
+            continue
         advertisers.append({"name": name, "domain": display_domain})
 
     return advertisers
@@ -544,7 +594,7 @@ def parse_organic_rank_from_html(html, business_name, domain):
 
         all_text = f"{title} {url}".lower()
         matched = False
-        if domain and (domain in host or domain in all_text):
+        if domain and domain in host:
             matched = True
         elif name_matches(all_text, business_name):
             matched = True
@@ -556,6 +606,212 @@ def parse_organic_rank_from_html(html, business_name, domain):
             break
 
     return rank, results
+
+
+# --------------------------- Google API path -------------------------------
+#
+# ScrapingBee's `custom_google` on /api/v1/ broke 2026-08-17: HTTP 500s, and
+# billed 5.5KB URL-echo stubs returned as HTTP 200. The parameter is no longer
+# documented anywhere. The documented replacement is /api/v1/google, which
+# returns STRUCTURED JSON rather than SERP HTML, so the parse_*_from_html
+# functions cannot read it.
+#
+# These adapters produce the SAME shapes those parsers produced, so everything
+# downstream (health_check, pdf_generator) is untouched:
+#   organic -> (rank, [{position,title,url,domain}])
+#   local   -> {rank, in_3_pack, top_3}
+#   ads     -> [{name, domain}]
+#
+# Geo targeting is by latitude/longitude. The endpoint REJECTS uule outright
+# (allowed extra_params keys are filter, fpstate, locale, nfpr, safe,
+# safe_search, tbm, tbs, udm). Verified 2026-08-18: Tampa and Portland returned
+# entirely disjoint local packs on the same neutral query.
+GOOGLE_API_URL = "https://app.scrapingbee.com/api/v1/google"
+
+
+def fetch_serp_google_api(query, city, api_key, timeout=120):
+    """Fetch one SERP as structured JSON. Returns the parsed dict.
+
+    Raises RuntimeError rather than returning a partial result, so the caller
+    records an explicit error. Two failure modes are fatal on purpose:
+
+      1. Geocoding failed. Without coordinates the endpoint falls back to
+         country-level results, which would then be attributed to a city we
+         never targeted: an unmeasured city rendered as a measurement.
+      2. No organic_results key at all. Structural failure, the JSON analogue
+         of the URL-echo stub.
+    """
+    coords = geocode_city_osm(city)
+    if not coords:
+        raise RuntimeError(
+            "geocode failed for %r; refusing to run an untargeted search "
+            "and report it as a city result" % (city,))
+    params = {
+        "api_key": api_key,
+        "search": query,
+        "country_code": "us",
+        "latitude": coords[0],
+        "longitude": coords[1],
+    }
+    r = requests.get(GOOGLE_API_URL, params=params, timeout=timeout)
+    if r.status_code != 200:
+        raise RuntimeError(
+            "ScrapingBee google API HTTP %s: %s" % (r.status_code, r.text[:200]))
+    try:
+        d = r.json()
+    except Exception as e:
+        raise RuntimeError("ScrapingBee google API returned non-JSON: %s" % e)
+    if not isinstance(d, dict) or "organic_results" not in d:
+        raise RuntimeError("ScrapingBee google API response carries no "
+                           "organic_results key (structural failure)")
+    return d
+
+
+def _host(v):
+    return (v or "").lower().replace("www.", "").strip()
+
+
+def organic_from_api(d, business_name, domain):
+    """Mirror of parse_organic_rank_from_html, against JSON."""
+    rank = None
+    results = []
+    for r in (d.get("organic_results") or []):
+        pos = r.get("position")
+        if pos is not None and pos > 10:
+            continue
+        title = r.get("title") or ""
+        url = r.get("url") or ""
+        host = _host(r.get("domain"))
+        results.append({"position": pos, "title": title,
+                        "url": url, "domain": host})
+        all_text = ("%s %s" % (title, url)).lower()
+        matched = False
+        if domain and domain in host:
+            matched = True
+        elif name_matches(all_text, business_name):
+            matched = True
+        if matched and rank is None:
+            rank = pos
+    return rank, results
+
+
+def local_pack_from_api(d, business_name):
+    """Mirror of parse_local_pack_from_html, against JSON. Top 3 only."""
+    cards = [(x.get("title") or "").strip()
+             for x in (d.get("local_results") or [])]
+    cards = [c for c in cards if c][:3]
+    rank = None
+    for i, name in enumerate(cards, 1):
+        if name_matches(name, business_name):
+            rank = i
+            break
+    return {"rank": rank, "in_3_pack": rank is not None, "top_3": cards}
+
+
+def confirm_empty_pack(query, city, api_key, doc, business_name):
+    """Second opinion on an empty local pack. Returns (local_pack, note).
+
+    An empty pack from one backend is not evidence that Google serves no map
+    pack for that search. Measured 2026-08-20, both backends on 27 real
+    vertical/market queries: they agreed a pack was PRESENT 24 times and never
+    once agreed it was absent, while disagreeing 3 times. So an unconfirmed
+    empty is far more likely to be a measurement problem than a fact about the
+    prospect's market, and it must not print as one.
+
+    THE BAR for saying "Google shows no map pack for this search":
+
+        meta_data.location populated    the endpoint states WHERE it searched.
+                                        Null on the one measured JSON drop,
+                                        populated on all 26 other rows.
+        AND a second path agrees empty  an independent backend sees none too.
+
+    Anything less is UNCONFIRMED and says so.
+
+    RECONCILING TWO RULINGS. The endpoint ruling was to re-check only when the
+    pack is empty AND location is null. Taken with the bar above, that would
+    make "confirmed" unreachable, because confirmation needs a second path
+    exactly when location IS populated. So the re-check runs on any empty
+    pack. That is not the blanket dual-fetch the ruling was avoiding: empty
+    packs were 1 of 27 rows measured, so it costs about one extra fetch per
+    twenty-five, and only on rows that would otherwise print a claim we cannot
+    support.
+    """
+    lp = local_pack_from_api(doc, business_name)
+    if lp.get("top_3"):
+        return lp, "populated"
+    location = (doc.get("meta_data") or {}).get("location")
+    try:
+        html = fetch_serp_scrapingbee(query, city, api_key)
+    except Exception as e:
+        lp["confirmed_empty"] = False
+        lp["pack_note"] = "second path unavailable: %s" % str(e)[:80]
+        return lp, lp["pack_note"]
+    second = parse_local_pack_from_html(html, business_name)
+    if second.get("top_3"):
+        # The pack exists and the first backend missed it. Recover it rather
+        # than report an absence that is not there.
+        second["confirmed_empty"] = False
+        second["pack_note"] = "recovered from the second path"
+        return second, second["pack_note"]
+    lp["confirmed_empty"] = bool(location)
+    lp["pack_note"] = ("both paths agree, location %r" % location if location
+                       else "both paths empty but the endpoint did not "
+                            "confirm where it searched")
+    return lp, lp["pack_note"]
+
+
+def ads_from_api(d):
+    """Mirror of parse_ads_from_html, against JSON. Top and bottom ad blocks."""
+    out = []
+    seen = set()
+    for block in ("top_ads", "bottom_ads"):
+        for a in (d.get(block) or []):
+            name = (a.get("title") or "").strip()
+            dom = _host(a.get("domain") or a.get("visual_url"))
+            key = (name.lower(), dom)
+            if (name or dom) and key not in seen:
+                seen.add(key)
+                out.append({"name": name, "domain": dom})
+    return out
+
+
+def run_google_api(business, domain, city, queries, api_key):
+    out = {
+        "business": business,
+        "domain": domain,
+        "city": city,
+        "backend": "google_api",
+        "queries": [],
+        "error": None,
+    }
+    for q in queries:
+        try:
+            d = fetch_serp_google_api(q, city, api_key)
+            rank, results = organic_from_api(d, business, domain)
+            out["queries"].append({
+                "query": q,
+                "rank": rank,
+                "results": results,
+                "ads": ads_from_api(d),
+                # An empty pack gets a second opinion before anything is
+                # said about it. See confirm_empty_pack.
+                "local_pack": confirm_empty_pack(
+                    q, city, api_key, d, business)[0],
+                # Google's own view of where it searched from. Recorded so a
+                # mis-targeted run is auditable after the fact.
+                "resolved_location": (d.get("meta_data") or {}).get("location"),
+            })
+        except Exception as e:
+            out["queries"].append({
+                "query": q,
+                "rank": None,
+                "results": [],
+                "ads": [],
+                "local_pack": {"rank": None, "in_3_pack": False, "top_3": []},
+                "error": str(e)[:200],
+            })
+    return out
+
 
 
 def run_scrapingbee(business, domain, city, queries, api_key):
@@ -738,10 +994,18 @@ def run_playwright(business, domain, city, queries):
 def run(business, domain, city, queries):
     api_key = get_scrapingbee_key()
     if api_key:
+        # /api/v1/google is the DOCUMENTED endpoint and the one that works.
+        # custom_google (run_scrapingbee) broke 2026-08-17 and is no longer in
+        # ScrapingBee's docs. It stays as a fallback only until support
+        # confirms its status, then it should be deleted.
+        try:
+            return run_google_api(business, domain, city, queries, api_key)
+        except Exception as e:
+            print("Google API path failed: %s" % e, file=sys.stderr)
         try:
             return run_scrapingbee(business, domain, city, queries, api_key)
         except Exception as e:
-            sys.stderr.write(f"ScrapingBee path failed: {e}\nFalling back to Playwright.\n")
+            print("Legacy custom_google failed: %s" % e, file=sys.stderr)
     return run_playwright(business, domain, city, queries)
 
 

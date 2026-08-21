@@ -160,6 +160,32 @@ GENERIC_TITLE_WORDS = {
 }
 
 
+
+# Debug tracing is OFF unless HEALTHCHECK_DEBUG=1.
+#
+# These prints go to stdout, and the webapp streams stdout LIVE into a progress
+# box the prospect can read over the rep's shoulder while the scan runs. Raw
+# domains, page titles and KEEP lines are our plumbing, and they have been on
+# that screen since 2026-04-12. Off by default; still one env var away when
+# something needs diagnosing.
+DEBUG = os.environ.get("HEALTHCHECK_DEBUG") == "1"
+
+
+def _debug(msg):
+    """Print only when HEALTHCHECK_DEBUG=1."""
+    if DEBUG:
+        print(msg)
+
+
+def _join_human(items):
+    """['A','B','C'] -> 'A, B and C'. For a line a prospect reads."""
+    items = [str(i) for i in items if i]
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    return ", ".join(items[:-1]) + " and " + items[-1]
+
 def is_generic_title(title):
     if not title:
         return True
@@ -376,15 +402,33 @@ def build_pack_from_seo(cities, seo_per_city):
     organic rank also has the Local Map Pack section.
 
     Returns {"cities": [...], "results": {city: {rank, in_3_pack, top_3}}}.
+
+    A city whose SERP fetch FAILED carries an "error" key instead. That
+    distinction is load-bearing: without it a failed fetch collapses to
+    in_3_pack=False, which renders identically to "we scanned and you are
+    genuinely not in the 3-Pack" -- a false claim made to a prospect. The
+    graders and the PDF estimators must exclude errored cities rather than
+    count them as misses.
     """
     out = {"cities": list(cities), "results": {}}
     for c in cities:
         d = seo_per_city.get(c) or {}
+        err = d.get("error")
+        if err:
+            out["results"][c] = {
+                "rank": None, "in_3_pack": False, "top_3": [], "error": err,
+            }
+            continue
         lp = d.get("local_pack") or {}
         out["results"][c] = {
             "rank": lp.get("rank"),
             "in_3_pack": bool(lp.get("in_3_pack")),
             "top_3": lp.get("top_3") or [],
+            # Carried so the renderers can tell a CONFIRMED absence of a map
+            # pack from one nobody could confirm. Without it the two collapse
+            # and print the same sentence.
+            "confirmed_empty": bool(lp.get("confirmed_empty")),
+            "pack_note": lp.get("pack_note"),
         }
     return out
 
@@ -478,9 +522,9 @@ def check_seo_per_city(business, website, cities, state):
         # DEBUG: print raw scraper output so we can trace why SEO names
         # sometimes come through as page titles instead of business names.
         raw_results = match.get("results") or []
-        print(f"[DEBUG SEO {city}] raw results count: {len(raw_results)}")
+        _debug(f"[DEBUG SEO {city}] raw results count: {len(raw_results)}")
         for i, r in enumerate(raw_results[:6]):
-            print(
+            _debug(
                 f"[DEBUG SEO {city}] #{i+1}: "
                 f"domain={r.get('domain')!r} "
                 f"title={(r.get('title') or '')[:80]!r}"
@@ -496,7 +540,7 @@ def check_seo_per_city(business, website, cities, state):
             if is_real_agency_result(r):
                 name = display_name_from_result(r)
                 key = name.lower().strip() if name else ""
-                print(
+                _debug(
                     f"[DEBUG SEO {city}] KEEP domain={r.get('domain')!r} "
                     f"-> display_name={name!r}"
                 )
@@ -508,9 +552,9 @@ def check_seo_per_city(business, website, cities, state):
         sys.stdout.flush()
 
         raw_ads = match.get("ads") or []
-        print(f"[DEBUG ADS {city}] raw ads count: {len(raw_ads)}")
+        _debug(f"[DEBUG ADS {city}] raw ads count: {len(raw_ads)}")
         for i, a in enumerate(raw_ads[:8]):
-            print(
+            _debug(
                 f"[DEBUG ADS {city}] #{i+1}: "
                 f"name={a.get('name')!r} domain={a.get('domain')!r}"
             )
@@ -532,6 +576,10 @@ def check_seo_per_city(business, website, cities, state):
         for f in as_completed(futures):
             city, data = f.result()
             out[city] = data
+            # They finish out of order, which is fine and worth showing: it is
+            # the only sign the scan is alive now the debug noise is gone.
+            print(f"  {city} ... done")
+            sys.stdout.flush()
     return out
 
 
@@ -770,6 +818,11 @@ def build_ads_per_city(business, competitors, seo_per_city, prospect_website="")
             "prospect_match": prospect_match,
             "all_advertisers": names,
             "competitors_running_ads": comp_hits,
+            # Derived from the SAME per-city SERP record, so it inherits that
+            # record's failure. Without this the ads row reads a failed fetch
+            # as an empty ad block and prints "No ads detected" -- a finding
+            # nobody measured.
+            "error": data.get("error"),
         }
     return out
 
@@ -808,7 +861,13 @@ def grade_count_based(found, total):
     With 3 cities: 3->A, 2->B, 1->C, 0->F.
     """
     if total == 0:
-        return "F"
+        # NOTHING WAS MEASURED. Returning "F" here silently undoes the two
+        # graders below, which go out of their way to drop unscanned cities
+        # so that "we could not check 2 of 3" never renders as "you are
+        # missing from 2 of 3" -- and then hand this function total=0 on a
+        # total outage, the very case they exist for. overall_grade already
+        # skips None as an unverified check; this is that value.
+        return None
     if found == 0:
         return "F"
     if found == total:
@@ -821,13 +880,27 @@ def grade_count_based(found, total):
 def grade_3pack_multi(pack):
     results = pack.get("results") or {}
     cities = pack.get("cities") or list(results.keys())
-    total = len(cities)
-    found = sum(1 for c in cities if (results.get(c) or {}).get("in_3_pack"))
+    # A city we could not scan is not a city they are absent from. Counting it
+    # in the denominator turns "we could not check 2 of 3" into a grade that
+    # reads as "you are missing from 2 of 3", which is a fabricated finding.
+    # A row with no map pack leaves the denominator whether or not the
+    # absence was confirmed. You cannot grade a business on a channel
+    # Google does not serve for that search, and an unconfirmed empty
+    # is not a measurement at all. A zero denominator already returns
+    # None rather than F.
+    scanned = [c for c in cities
+               if not (results.get(c) or {}).get("error")
+               and (results.get(c) or {}).get("top_3")]
+    total = len(scanned)
+    found = sum(1 for c in scanned if (results.get(c) or {}).get("in_3_pack"))
     return grade_count_based(found, total)
 
 
 def grade_seo_multi(seo_per_city):
-    cities = list(seo_per_city.keys())
+    # Same reasoning as grade_3pack_multi: an unscanned city is not evidence
+    # of absence, so it leaves the denominator entirely.
+    cities = [c for c in seo_per_city
+              if not (seo_per_city.get(c) or {}).get("error")]
     total = len(cities)
     found = 0
     for c in cities:
@@ -838,7 +911,11 @@ def grade_seo_multi(seo_per_city):
 
 
 def grade_ads_multi(ads_per_city):
-    cities = list(ads_per_city.keys())
+    # Same reasoning as grade_3pack_multi and grade_seo_multi: one we
+    # could not scan is not one they are absent from, so it leaves the
+    # denominator entirely. This grader never had that filter.
+    cities = [k for k in ads_per_city
+              if not (ads_per_city.get(k) or {}).get("error")]
     total = len(cities)
     found = sum(
         1 for c in cities if (ads_per_city.get(c) or {}).get("prospect_running_ads")
@@ -944,9 +1021,10 @@ def run_health_check(business, cities, state):
             results["review_gap"] = gap
 
     # Parallel: SEO (per city, also yields 3-Pack via local_pack), Website, Reviews
+    # Plain language on purpose: a prospect reads this over the rep's
+    # shoulder, and "SEO+3-Pack" means nothing to them.
     print(
-        f"Running parallel scans (SEO+3-Pack, Website, Reviews) "
-        f"across {len(cities)} cities: {', '.join(cities)}\n"
+        f"Checking {_join_human(cities)}. Map results, search results, ads, website and reviews.\n"
     )
     sys.stdout.flush()
 
@@ -979,10 +1057,14 @@ def run_health_check(business, cities, state):
             return f"{label:<{label_width}} ERROR ({d.get('error', '?')})"
         top_3_list = d.get("top_3", []) or []
         if not top_3_list:
-            return (
-                f"{label:<{label_width}} No local map pack found "
-                f"for this city"
-            )
+            if d.get("confirmed_empty"):
+                return (f"{label:<{label_width}} Google shows no map "
+                        f"pack for this search")
+            # Not confirmed. Deliberately says nothing about the prospect: an
+            # empty pack from one backend is usually a measurement problem,
+            # and a rep reads this row out loud.
+            return (f"{label:<{label_width}} Map results "
+                    f"unconfirmed for this search")
         top_3_str = ", ".join(top_3_list[:3])
         if d.get("in_3_pack"):
             return f"{label:<{label_width}} FOUND rank {d['rank']} (Top 3: {top_3_str})"
@@ -1012,7 +1094,16 @@ def run_health_check(business, cities, state):
         rank = d.get("rank")
         top_3 = d.get("top_3") or []
         cleaned = [trim_title(t) for t in top_3[:3] if t]
-        if not cleaned:
+        if d.get("error"):
+            # A failed fetch is not an absence. Printing "no organic results"
+            # here tells a prospect they rank nowhere when nothing was measured,
+            # the fabricated finding the 3-Pack row above already refuses.
+            seo_lines.append(
+                f"{c}: ERROR ({str(d.get('error'))[:60]})")
+            # The row is decided. Without this the loop falls through and
+            # appends a second, contradictory line for the same city.
+            continue
+        elif not cleaned:
             seo_lines.append(f"{c}: No organic results found for this city")
             continue
         top_3_str = ", ".join(cleaned)
@@ -1037,7 +1128,12 @@ def run_health_check(business, cities, state):
         if d.get("prospect_running_ads"):
             business_running_anywhere = True
         advs = d.get("all_advertisers") or []
-        if advs:
+        if d.get("error"):
+            # Same reasoning as the SEO row: nothing scanned has no ad block
+            # to be empty.
+            ads_lines.append(
+                f"{c}: ERROR ({str(d.get('error'))[:60]})")
+        elif advs:
             ads_lines.append(f"{c}: {', '.join(advs)}")
         else:
             ads_lines.append(f"{c}: No ads detected")
