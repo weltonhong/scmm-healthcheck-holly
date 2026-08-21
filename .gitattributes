@@ -1,0 +1,15 @@
+# Force LF for every text file in this deploy slice.
+#
+# The canonical repo stores LF. A clone made on Windows without this can check
+# out CRLF, and then a sync diff is 100% of every file touched -- which makes a
+# real change unreviewable and hides what actually moved.
+#
+# sync_tool.sh also clones with -c core.autocrlf=false and asserts the diff is
+# identical with and without --ignore-cr-at-eol. This file is the durable half
+# of that guard, for anyone who clones by hand later.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
