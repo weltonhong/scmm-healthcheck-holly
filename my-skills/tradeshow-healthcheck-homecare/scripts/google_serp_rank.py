@@ -864,6 +864,31 @@ CONSENT_SELECTORS = [
 ]
 
 
+# A TOWN IS NOT ITS COUNTY (Welton, 2026-10-14). Nominatim's FIRST answer for
+# "Franklin, Virginia" is Franklin County (by Rocky Mount), 165 miles from the
+# City of Franklin; likewise Decatur GA (201 mi), Seminole FL, Sonoma CA,
+# Warren OH, Chester PA and more. A town lookup orders its answers: towns
+# first, then townships, then (only when there is no town) a landmark in it,
+# such as a station or a lake (Lake Worth FL, Spring Valley Lake CA have no
+# town-level answer at all); never a county, a state or a country. Nominatim's
+# own order is kept within each tier. Byte-identical in every lookup that
+# carries it; enforced by ops/test_town_not_county.py.
+_TOWN_KINDS = ("city", "town", "village", "hamlet", "municipality", "borough",
+               "suburb", "quarter", "neighbourhood", "census", "statistical")
+_REGION_KINDS = ("county", "state", "country", "region", "province", "state_district")
+
+
+def _town_answers(results):
+    def kind(d):
+        return str(d.get("addresstype") or d.get("type") or "").lower()
+    kept = ([d for d in results if kind(d) in _TOWN_KINDS]
+            + [d for d in results if kind(d) == "township"]
+            + [d for d in results if kind(d) not in _TOWN_KINDS + ("township",) + _REGION_KINDS])
+    if results and not kept:
+        print("  WARNING: only a county or other region came back; refusing it")
+    return kept
+
+
 def geocode_city_osm(city):
     # THE STATE IS SPELLED OUT, AND THE ANSWER MUST BE IN IT (Welton,
     # 2026-10-13), the rule from where-are-you serp_helpers.
@@ -890,6 +915,7 @@ def geocode_city_osm(city):
                         == state_full.lower()]
                 if not data:
                     print(f"WARNING: no in-state geocode for {city!r}; refusing out-of-state answers")
+            data = _town_answers(data)
             if data:
                 return float(data[0]["lat"]), float(data[0]["lon"])
     except Exception:

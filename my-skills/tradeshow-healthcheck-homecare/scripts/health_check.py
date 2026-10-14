@@ -343,13 +343,27 @@ def _result_in_state(result, state):
                for c in result.get("address_components") or [])
 
 
+# A TOWN IS NOT ITS COUNTY (Welton, 2026-10-14). A place lookup never returns
+# a county-, state- or country-level answer; a street or town answer passes.
+# Byte-identical in every Google lookup that carries it; enforced by
+# ops/test_town_not_county.py.
+_REGION_TYPES = {"administrative_area_level_1", "administrative_area_level_2", "country"}
+
+
+def _not_a_region(results):
+    kept = [r for r in results if not set(r.get("types") or ()) & _REGION_TYPES]
+    if results and not kept:
+        print("  WARNING: only a county- or state-level geocode came back; refusing it")
+    return kept
+
+
 def geocode(address, api_key):
     want = _requested_state(address)
     url = f"{GEOCODE_API_URL}?{urllib.parse.urlencode({'address': address, 'key': api_key})}"
     try:
         with urllib.request.urlopen(url, timeout=15) as r:
             data = json.loads(r.read().decode("utf-8"))
-        results = data.get("results") or []
+        results = _not_a_region(data.get("results") or [])
         for res in results:
             if want and not _result_in_state(res, want):
                 continue
