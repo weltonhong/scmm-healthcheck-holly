@@ -318,14 +318,45 @@ def fuzzy_name_match(a, b):
     return False
 
 
+# --- state-checked geocode: byte-identical in all five booth tools, enforced by
+# tradeshow-healthcheck-homecare/scripts/test_geocode_state_guard.py ---
+# A LOOKUP THAT CANNOT REFUSE A WRONG-STATE ANSWER IS THE DEFECT, whichever
+# service it asks (Welton, 2026-10-13). Google fails less often than Nominatim;
+# it does not tell you when it failed. When the request names a state, only an
+# answer in that state is used.
+_US_STATE_CODES = frozenset(
+    "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO "
+    "MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC".split())
+
+
+def _requested_state(address):
+    """The two-letter state the request names ('Orange, CT', 'Orange CT 06477',
+    '..., CT 06477, USA'), or None when it names none."""
+    m = re.search(r"\b([A-Za-z]{2})\b(?:\s+\d{5}(?:-\d{4})?)?(?:\s*,?\s*(?:USA|United States))?\s*$",
+                  address or "")
+    st = m.group(1).upper() if m else None
+    return st if st in _US_STATE_CODES else None
+
+
+def _result_in_state(result, state):
+    return any("administrative_area_level_1" in (c.get("types") or []) and c.get("short_name") == state
+               for c in result.get("address_components") or [])
+
+
 def geocode(address, api_key):
+    want = _requested_state(address)
     url = f"{GEOCODE_API_URL}?{urllib.parse.urlencode({'address': address, 'key': api_key})}"
     try:
         with urllib.request.urlopen(url, timeout=15) as r:
             data = json.loads(r.read().decode("utf-8"))
-        if data.get("results"):
-            loc = data["results"][0]["geometry"]["location"]
+        results = data.get("results") or []
+        for res in results:
+            if want and not _result_in_state(res, want):
+                continue
+            loc = res["geometry"]["location"]
             return loc["lat"], loc["lng"]
+        if want and results:
+            print(f"WARNING: no in-state geocode for {address!r}; refusing out-of-state answers")
     except Exception:
         pass
     return None, None

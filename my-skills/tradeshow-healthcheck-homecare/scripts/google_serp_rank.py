@@ -865,16 +865,31 @@ CONSENT_SELECTORS = [
 
 
 def geocode_city_osm(city):
-    canonical = city.replace(",", " ")
+    # THE STATE IS SPELLED OUT, AND THE ANSWER MUST BE IN IT (Welton,
+    # 2026-10-13), the rule from where-are-you serp_helpers.
+    # geocode_city_osm_detail. Nominatim reads a bare two-letter code as a
+    # street word: "Orange CT" came back as Orange Court, Plant City FL.
+    # Byte-identical in all five booth tools; enforced by
+    # tradeshow-healthcheck-homecare/scripts/test_geocode_state_guard.py.
+    s = city.replace(",", " ").strip()
+    parts = s.rsplit(None, 1)
+    state_full = US_STATE_ABBREVS.get(parts[1].upper()) if len(parts) == 2 else None
+    canonical = f"{parts[0]}, {state_full}" if state_full else s
     encoded = urllib.parse.quote(canonical)
     url = (
         f"https://nominatim.openstreetmap.org/search?"
-        f"q={encoded}&format=json&limit=1&countrycodes=us"
+        f"q={encoded}&format=json&limit=5&countrycodes=us&addressdetails=1"
     )
     req = urllib.request.Request(url, headers={"User-Agent": "HealthCheckSERP/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
+            if state_full:
+                data = [d for d in data
+                        if ((d.get("address") or {}).get("state") or "").lower()
+                        == state_full.lower()]
+                if not data:
+                    print(f"WARNING: no in-state geocode for {city!r}; refusing out-of-state answers")
             if data:
                 return float(data[0]["lat"]), float(data[0]["lon"])
     except Exception:
