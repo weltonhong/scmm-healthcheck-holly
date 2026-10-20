@@ -418,6 +418,10 @@ if st.session_state.get("scan_done"):
 
     results = st.session_state.get("results")
     if results:
+        # Why the reviews read "couldn't check", for the rep (a timeout is worth a re-run).
+        note = listing_confirm.rep_note((results.get("google_intel") or {}).get("target"))
+        if note:
+            st.warning(note)
         if not st.session_state.get("error"):
             # Re-render the captured terminal log so the user can scroll it
             with st.expander("Live scan log", expanded=False):
