@@ -75,6 +75,8 @@ importlib.reload(health_check)
 importlib.reload(pdf_generator)
 import state_check  # noqa: E402
 importlib.reload(state_check)
+import sheet_archive  # noqa: E402
+importlib.reload(sheet_archive)
 
 
 # ----------------------------------------------------------------------------
@@ -245,6 +247,9 @@ if submitted:
     st.session_state["results"] = None
     st.session_state["error"] = None
     st.session_state["log_text"] = ""
+    st.session_state["pdf_bytes"] = None  # never hand the next prospect the last sheet
+    st.session_state["archive_done"] = False
+    st.session_state["archive_note"] = None
     st.session_state["form_values"] = {
         "business": business.strip(),
         "home_city": home_city.strip(),
@@ -500,3 +505,15 @@ if st.session_state.get("scan_done"):
                 mime="application/pdf",
                 type="primary",
             )
+
+        # Keep a copy of every sheet for the office (scripts/sheet_archive.py,
+        # Welton 2026-10-20). After the download button, so the rep never waits
+        # on it; a failed save is a note to the rep, never a missing sheet.
+        if pdf_bytes and not st.session_state.get("archive_done"):
+            st.session_state["archive_done"] = True
+            saved, where = sheet_archive.save_sheet(
+                pdf_bytes, results, st.session_state.get("log_text", ""),
+                st.session_state.get("form_values", {}).get("business", ""))
+            st.session_state["archive_note"] = None if saved else sheet_archive.REP_NOTE % where
+        if st.session_state.get("archive_note"):
+            st.warning(st.session_state["archive_note"])
