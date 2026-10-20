@@ -1218,7 +1218,7 @@ def run_health_check(business, cities, state, listing=None):
                 return true_label
             if v is False:
                 return false_label
-            return "?"
+            return "Couldn't check"
 
         psi_score = web.get("pagespeed_score")
         if psi_score is None:
@@ -1228,7 +1228,7 @@ def run_health_check(business, cities, state, listing=None):
 
         blog_last = web.get("blog_last_post")
         blog_display = (
-            f"Last post {blog_last}" if blog_last else "No blog or no recent posts"
+            f"Last post {blog_last}" if blog_last else ("couldn't read the blog" if c.get("blog_recent") is None else "No blog or no recent posts")
         )
 
         web_lines = [
@@ -1239,10 +1239,10 @@ def run_health_check(business, cities, state, listing=None):
             f"Intake form/widget:      {yn(c.get('intake_form'), 'Yes', 'No (phone only)')}",
             f"LocalBusiness schema:    {yn(c.get('localbusiness_schema'), 'Yes', 'No')}",
             f"Google reviews widget:   {yn(c.get('google_reviews_widget'), 'Yes', 'No')}",
-            f"Grade: {web.get('grade', 'F')}",
+            f"Grade: {web.get('grade') or 'none (too little could be read)'}",
         ]
         print_section("WEBSITE:", web_lines)
-        web_grade = web.get("grade", "F")
+        web_grade = web.get("grade")
     results["website_grade"] = web_grade
 
     # Print Reviews snapshot

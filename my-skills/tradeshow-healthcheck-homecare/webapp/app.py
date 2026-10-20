@@ -547,7 +547,7 @@ if st.session_state.get("scan_done"):
                     ("google_reviews_widget", "Google reviews widget"),
                 ]:
                     v = checks.get(k)
-                    mark = "✅" if v is True else ("❌" if v is False else "—")
+                    mark = "✅" if v is True else ("❌" if v is False else "Couldn't check")
                     st.write(f"- {label}: {mark}")
 
         # PDF download

@@ -430,6 +430,13 @@ def _build_recommendations_top2(results):
     ]
 
 
+def _web_answer(value, no_text):
+    """Yes / the No text / "Couldn't check" (None: the page the check needed could not be read)."""
+    if value is None:
+        return "Couldn't check"
+    return "Yes" if value else no_text
+
+
 def build_pdf(results):
     business = results.get("business", "Prospect")
     city = results.get("city", "")
@@ -693,18 +700,18 @@ def build_pdf(results):
         c = web.get("checks", {})
         psi_score = web.get("pagespeed_score")
         bits = []
-        bits.append("Real photos: " + ("Yes" if c.get("real_photos") else "No (stock)"))
+        bits.append("Real photos: " + _web_answer(c.get("real_photos"), "No (stock)"))
         if psi_score is not None:
             bits.append(f"PageSpeed: {psi_score}/100")
         else:
-            bits.append("PageSpeed: ?")
-        bits.append("Team page: " + ("Yes" if c.get("about_team_page") else "No"))
-        bits.append("Blog (6mo): " + ("Yes" if c.get("blog_recent") else "No"))
-        bits.append("Intake form: " + ("Yes" if c.get("intake_form") else "No"))
-        bits.append("Schema: " + ("Yes" if c.get("localbusiness_schema") else "No"))
-        bits.append("Reviews widget: " + ("Yes" if c.get("google_reviews_widget") else "No"))
+            bits.append("PageSpeed: Couldn't check")
+        bits.append("Team page: " + _web_answer(c.get("about_team_page"), "No"))
+        bits.append("Blog (6mo): " + _web_answer(c.get("blog_recent"), "No"))
+        bits.append("Intake form: " + _web_answer(c.get("intake_form"), "No"))
+        bits.append("Schema: " + _web_answer(c.get("localbusiness_schema"), "No"))
+        bits.append("Reviews widget: " + _web_answer(c.get("google_reviews_widget"), "No"))
         web_detail = "  |  ".join(bits)
-        web_grade_display = grades.get("website") or "F"
+        web_grade_display = grades.get("website") or "N/A"
 
     # ads is {city: {prospect_running_ads, all_advertisers, ...}}
     # Stack each city on its own line and always list ALL advertisers found.
