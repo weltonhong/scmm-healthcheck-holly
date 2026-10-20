@@ -670,19 +670,17 @@ def build_pdf(results):
             seo_lines_html.append(
                 f"<b>{c}:</b> Couldn't check this search")
             continue
-        if not cleaned:
-            seo_lines_html.append(
-                f"<b>{c}:</b> No organic results found for this city"
-            )
-            continue
         top_3_str = ", ".join(cleaned)
+        # No names to list is not "no organic results" (Welton 2026-10-20): the page was read and the
+        # rank stands; scripts/organic_names.py only names real businesses, so the list can be empty.
+        top_3_part = f" (Top 3: {top_3_str})" if cleaned else ""
         if rank is None:
             seo_lines_html.append(
-                f"<b>{c}:</b> Not in top 10 (Top 3: {top_3_str})"
+                f"<b>{c}:</b> Not in top 10{top_3_part}"
             )
         else:
             seo_lines_html.append(
-                f"<b>{c}:</b> Rank {rank} (Top 3: {top_3_str})"
+                f"<b>{c}:</b> Rank {rank}{top_3_part}"
             )
     seo_detail = "<br/>".join(seo_lines_html) if seo_lines_html else "No data"
 

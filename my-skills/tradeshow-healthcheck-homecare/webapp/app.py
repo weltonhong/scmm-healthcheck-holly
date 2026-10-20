@@ -453,7 +453,7 @@ if st.session_state.get("scan_done"):
                 if d.get("error"):
                     st.write(f"**{c}:** Couldn't check this search")
                     continue
-                st.write(f"**{c}:** {rank_txt} (Top 3: {top3})")
+                st.write(f"**{c}:** {rank_txt}" + (f" (Top 3: {top3})" if d.get("top_3") else ""))
 
         with st.expander("Google Ads", expanded=False):
             for c, d in (results.get("ads") or {}).items():

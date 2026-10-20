@@ -48,6 +48,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 import website_audit  # noqa: E402
 import map_identity  # noqa: E402  (which map card is the prospect)
+import organic_names  # noqa: E402  (real names in the organic Top 3)
 import name_matcher  # noqa: E402
 
 
@@ -579,24 +580,13 @@ def check_seo_per_city(business, website, cities, state, own_cids=()):
             )
         sys.stdout.flush()
 
-        # Filter to real home care agency websites only -- skip directories,
-        # info articles, and gov/medical sites. Dedupe by name so a domain
-        # that appears twice (homepage + city page) shows once.
-        top_3 = []
-        seen_names = set()
-        for r in raw_results:
-            if is_real_agency_result(r):
-                name = display_name_from_result(r)
-                key = name.lower().strip() if name else ""
-                _debug(
-                    f"[DEBUG SEO {city}] KEEP domain={r.get('domain')!r} "
-                    f"-> display_name={name!r}"
-                )
-                if name and key not in seen_names:
-                    seen_names.add(key)
-                    top_3.append(name)
-                    if len(top_3) >= 3:
-                        break
+        # Real business names only, on their own sites; the prospect's own result
+        # prints their name written properly (scripts/organic_names.py, Welton
+        # 2026-10-20: "Mapquest", "Clarkcountynv" and "Lapaloma" on the La Paloma
+        # sheet). The old directory filter stays as an extra skip only.
+        top_3 = organic_names.top_names(
+            raw_results, website, business,
+            skip=lambda r: not is_real_agency_result(r), town=city)
         sys.stdout.flush()
 
         raw_ads = match.get("ads") or []
@@ -1158,14 +1148,14 @@ def run_health_check(business, cities, state):
             # The row is decided. Without this the loop falls through and
             # appends a second, contradictory line for the same city.
             continue
-        elif not cleaned:
-            seo_lines.append(f"{c}: No organic results found for this city")
-            continue
         top_3_str = ", ".join(cleaned)
+        # No names to list is not "no organic results" (Welton 2026-10-20): the page was read and the
+        # rank stands; scripts/organic_names.py only names real businesses, so the list can be empty.
+        top_3_part = f" (Top 3: {top_3_str})" if cleaned else ""
         if rank is None:
-            seo_lines.append(f"{c}: Not in top 10 (Top 3: {top_3_str})")
+            seo_lines.append(f"{c}: Not in top 10{top_3_part}")
         else:
-            seo_lines.append(f"{c}: Rank {rank} (Top 3: {top_3_str})")
+            seo_lines.append(f"{c}: Rank {rank}{top_3_part}")
     seo_lines.append(f"Grade: {seo_grade}")
     print_section("GOOGLE ORGANIC RANKINGS (SEO):", seo_lines)
     results["seo_grade"] = seo_grade
