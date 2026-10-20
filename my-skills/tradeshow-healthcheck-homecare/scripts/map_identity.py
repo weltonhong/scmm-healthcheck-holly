@@ -103,9 +103,16 @@ def judge_pack(cards, business, own_cids):
             rank = i
         elif v == CANT_TELL and maybe is None:
             maybe = i
+    # A name prints once (Welton 2026-10-20): "Star Mortuary, Star Mortuary" on La Paloma's Boulder City
+    # row was one business with two Google listings at 900 Nevada Way (star_mortuary_recorded.json).
+    # Positions above still count every card, so a prospect behind both is #3.
+    names = []
+    for n, _ in cards:
+        if n not in names:
+            names.append(n)
     return {"rank": rank, "in_3_pack": rank is not None,
             "maybe_rank": None if rank is not None else maybe,
-            "top_3": [n for n, _ in cards], "card_ids": [c for _, c in cards]}
+            "top_3": names, "card_ids": [c for _, c in cards]}
 
 
 def own_cids(target, business):
