@@ -36,6 +36,7 @@ UNSCANNED = "UNSCANNED"
 NO_PACK = "NO_PACK"
 IN_PACK = "IN_PACK"
 ABSENT_FROM_PACK = "ABSENT_FROM_PACK"
+UNCONFIRMED = "UNCONFIRMED"
 
 def map_status(row):
     """Same four states as each pdf_generator.pack_status (pinned by the test)."""
@@ -44,6 +45,10 @@ def map_status(row):
         return UNSCANNED
     if row.get("in_3_pack"):
         return IN_PACK
+    if row.get("maybe_rank"):
+        # A card may be theirs but its place id did not confirm it
+        # (scripts/map_identity.py): never a rank, never a miss.
+        return UNCONFIRMED
     if not [t for t in (row.get("top_3") or []) if t]:
         return NO_PACK
     return ABSENT_FROM_PACK

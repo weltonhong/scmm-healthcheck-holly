@@ -280,6 +280,7 @@ UNSCANNED = "UNSCANNED"
 NO_PACK = "NO_PACK"
 IN_PACK = "IN_PACK"
 ABSENT_FROM_PACK = "ABSENT_FROM_PACK"
+UNCONFIRMED = "UNCONFIRMED"
 
 
 def pack_status(pack_row):
@@ -289,6 +290,10 @@ def pack_status(pack_row):
         return UNSCANNED
     if row.get("in_3_pack"):
         return IN_PACK
+    if row.get("maybe_rank"):
+        # A card may be theirs but its place id did not confirm it
+        # (scripts/map_identity.py): never a rank, never a miss.
+        return UNCONFIRMED
     if not [t for t in (row.get("top_3") or []) if t]:
         # No pack was served. Measured 2026-08-20 across 27 real
         # vertical/market queries: a genuinely packless search did not occur
@@ -632,6 +637,8 @@ def build_pdf(results):
         top_3_str = ", ".join(top_3[:3])
         if d.get("in_3_pack"):
             return f"FOUND rank {d.get('rank')} (Top 3: {top_3_str})"
+        if d.get("maybe_rank"):
+            return f"Couldn't confirm: #{d.get('maybe_rank')} may be you (Top 3: {top_3_str})"
         return f"NOT FOUND (Top 3: {top_3_str})"
 
     pack_lines_html = [

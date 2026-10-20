@@ -116,6 +116,7 @@ def get_scrapingbee_key():
 # resolve correctly in both the local-pack matcher and the Google Ads
 # matcher.
 import name_matcher  # noqa: E402  (sibling module on sys.path)
+import map_identity  # noqa: E402  (which map card is the prospect)
 
 
 STOPWORDS = {"&", "and", "the", "of", "inc", "llc", "co", "corp", "company"}
@@ -516,20 +517,9 @@ def parse_local_pack_from_html(html, business_name):
             continue
         cards.append(name)
 
-    # Local pack is at most 3 cards
-    cards = cards[:3]
-
-    rank = None
-    for i, name in enumerate(cards, 1):
-        if name_matches(name, business_name):
-            rank = i
-            break
-
-    return {
-        "rank": rank,
-        "in_3_pack": rank is not None,
-        "top_3": cards,
-    }
+    # Local pack is at most 3 cards. The page HTML carries no place id, so
+    # map_identity judges by pre-call's name rules only (Welton 2026-10-20).
+    return map_identity.judge_pack([(n, None) for n in cards], business_name, ())
 
 
 def parse_organic_rank_from_html(html, business_name, domain):
@@ -702,20 +692,19 @@ def organic_from_api(d, business_name, domain):
     return rank, results
 
 
-def local_pack_from_api(d, business_name):
-    """Mirror of parse_local_pack_from_html, against JSON. Top 3 only."""
-    cards = [(x.get("title") or "").strip()
+def local_pack_from_api(d, business_name, own_cids=()):
+    """Mirror of parse_local_pack_from_html, against JSON. Top 3 only.
+
+    Which card is the prospect is decided by map_identity: a card is theirs
+    when its place id (cid) is their own listing's, never by the name alone
+    (Welton 2026-10-20: Forest Lawn's own "Forest Lawn" card read as a rival).
+    """
+    cards = [((x.get("title") or "").strip(), x.get("cid"))
              for x in (d.get("local_results") or [])]
-    cards = [c for c in cards if c][:3]
-    rank = None
-    for i, name in enumerate(cards, 1):
-        if name_matches(name, business_name):
-            rank = i
-            break
-    return {"rank": rank, "in_3_pack": rank is not None, "top_3": cards}
+    return map_identity.judge_pack([c for c in cards if c[0]], business_name, own_cids)
 
 
-def confirm_empty_pack(query, city, api_key, doc, business_name):
+def confirm_empty_pack(query, city, api_key, doc, business_name, own_cids=()):
     """Second opinion on an empty local pack. Returns (local_pack, note).
 
     An empty pack from one backend is not evidence that Google serves no map
@@ -743,7 +732,7 @@ def confirm_empty_pack(query, city, api_key, doc, business_name):
     twenty-five, and only on rows that would otherwise print a claim we cannot
     support.
     """
-    lp = local_pack_from_api(doc, business_name)
+    lp = local_pack_from_api(doc, business_name, own_cids)
     if lp.get("top_3"):
         return lp, "populated"
     location = (doc.get("meta_data") or {}).get("location")
@@ -782,7 +771,7 @@ def ads_from_api(d):
     return out
 
 
-def run_google_api(business, domain, city, queries, api_key):
+def run_google_api(business, domain, city, queries, api_key, own_cids=()):
     out = {
         "business": business,
         "domain": domain,
@@ -803,7 +792,7 @@ def run_google_api(business, domain, city, queries, api_key):
                 # An empty pack gets a second opinion before anything is
                 # said about it. See confirm_empty_pack.
                 "local_pack": confirm_empty_pack(
-                    q, city, api_key, d, business)[0],
+                    q, city, api_key, d, business, own_cids)[0],
                 # Google's own view of where it searched from. Recorded so a
                 # mis-targeted run is auditable after the fact.
                 "resolved_location": (d.get("meta_data") or {}).get("location"),
@@ -1039,7 +1028,7 @@ def run_playwright(business, domain, city, queries):
 # ----------------------------- entrypoint -----------------------------
 
 
-def run(business, domain, city, queries):
+def run(business, domain, city, queries, own_cids=()):
     api_key = get_scrapingbee_key()
     if api_key:
         # /api/v1/google is the DOCUMENTED endpoint and the one that works.
@@ -1047,7 +1036,7 @@ def run(business, domain, city, queries):
         # ScrapingBee's docs. It stays as a fallback only until support
         # confirms its status, then it should be deleted.
         try:
-            return run_google_api(business, domain, city, queries, api_key)
+            return run_google_api(business, domain, city, queries, api_key, own_cids)
         except Exception as e:
             print("Google API path failed: %s" % e, file=sys.stderr)
         try:
@@ -1064,10 +1053,13 @@ def main():
     parser.add_argument("--city", required=True, help="e.g. 'Tampa FL'")
     parser.add_argument("--queries", required=True,
                         help="Pipe-separated list of queries")
+    parser.add_argument("--cids", default="",
+                        help="Comma-separated place ids (cid) of the prospect's own Google listing")
     args = parser.parse_args()
 
     queries = [q.strip() for q in args.queries.split("|") if q.strip()]
-    result = run(args.business, args.domain, args.city, queries)
+    result = run(args.business, args.domain, args.city, queries,
+                 [c for c in args.cids.split(",") if c.strip()])
     print(json.dumps(result, indent=2))
 
 

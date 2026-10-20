@@ -437,6 +437,8 @@ if st.session_state.get("scan_done"):
                     st.write(f"**{c}:** Couldn't check this search")
                 elif d.get("in_3_pack"):
                     st.write(f"**{c}:** Found at rank {d.get('rank')} (Top 3: {top3})")
+                elif d.get("maybe_rank"):
+                    st.write(f"**{c}:** Couldn't confirm: #{d.get('maybe_rank')} may be you (Top 3: {top3})")
                 elif not [t for t in (d.get("top_3") or []) if t]:
                     st.write(f"**{c}:** " + ("Google shows no map pack for this search"
                              if d.get("confirmed_empty") else "Map results unconfirmed for this search"))
