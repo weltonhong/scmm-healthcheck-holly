@@ -13,6 +13,7 @@ from pathlib import Path
 
 import headline
 import listing_confirm
+import ads_words
 
 import qrcode
 
@@ -252,7 +253,7 @@ def count_gaps(results):
                 n += 1
         d = ads_per_city.get(c) or {}
         comps = d.get("competitors_running_ads") or []
-        if comps and not d.get("prospect_running_ads"):
+        if comps and not d.get("prospect_running_ads") and not d.get("prospect_maybe_ad"):
             n += 1
 
     web_checks = (results.get("website") or {}).get("checks") or {}
@@ -373,13 +374,12 @@ def _build_recommendations_top2(results):
     for c in cities:
         d = ads_per_city.get(c) or {}
         comps = d.get("competitors_running_ads") or []
-        if comps and not d.get("prospect_running_ads"):
+        if comps and not d.get("prospect_running_ads") and not d.get("prospect_maybe_ad"):
             names = ", ".join(x["name"] for x in comps[:3])
             score = 75 + len(comps) * 3
             candidates.append((score,
                 f"<b>{names}</b> are paying Google to put their phone number above everything "
-                f"else when families search for home care in {c}. You are not in that "
-                f"auction. Every click on a sponsored result is a family handing their "
+                f"else when families search for home care in {c}. Your ad was not there when we searched. Every click on a sponsored result is a family handing their "
                 f"inquiry to your competitor before they ever see your name."
             ))
             break
@@ -730,10 +730,10 @@ def build_pdf(results):
         elif advs:
             ads_lines.append(f"<b>{c}:</b> {', '.join(advs)}")
         else:
-            ads_lines.append(f"<b>{c}:</b> No ads detected")
+            ads_lines.append(f"<b>{c}:</b> " + ads_words.none_seen())
     ads_lines.append(
         f"<b>{business}:</b> "
-        + ("Running" if business_running_anywhere else "Not running")
+        + ads_words.summary(ads, list(ads))
     )
     ads_detail = "<br/>".join(ads_lines)
 

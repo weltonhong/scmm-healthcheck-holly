@@ -76,7 +76,7 @@ import importlib  # noqa: E402
 
 _INTEL_DIR = SCRIPTS_DIR.parents[1] / "quick-intel" / "scripts"
 _BOOTH_MODULES = ("name_matcher", "pack_identity", "map_identity", "hook_generator", "name_format",
-                  "organic_names", "website_audit", "google_intel", "headline", "listing_confirm",
+                  "organic_names", "website_audit", "google_intel", "headline", "ads_words", "listing_confirm",
                   "state_check", "sheet_archive", "health_check", "pdf_generator")
 
 
@@ -545,7 +545,7 @@ if st.session_state.get("scan_done"):
                 if d.get("error"):
                     st.write(f"**{c}:** Couldn't check this search")
                     continue
-                advs = ", ".join(d.get("all_advertisers") or []) or "No ads detected"
+                advs = ", ".join(d.get("all_advertisers") or []) or "No ads seen"
                 st.write(f"**{c}:** {advs}")
                 if d.get("prospect_running_ads"):
                     st.write(f"&nbsp;&nbsp;↳ Prospect running ads in {c}")

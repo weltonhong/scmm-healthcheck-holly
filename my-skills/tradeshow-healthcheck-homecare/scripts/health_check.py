@@ -50,6 +50,7 @@ import website_audit  # noqa: E402
 import map_identity  # noqa: E402  (which map card is the prospect)
 import organic_names  # noqa: E402  (real names in the organic Top 3)
 import listing_confirm  # noqa: E402  (the rep confirms the business's own listing)
+import ads_words  # noqa: E402  (what the sheet may say about their ads)
 import name_matcher  # noqa: E402
 
 
@@ -829,13 +830,19 @@ def build_ads_per_city(business, competitors, seo_per_city, prospect_website="")
         # advertiser's display domain, leaving the domain field empty.
         # Without a name fallback the scorecard prints "Not running"
         # even when the prospect's name is sitting in the ad block.
+        # 2) A name alone is not proof (Welton 2026-10-20; prospect_identity's rule). An ad under their
+        # name with no readable link, or when their own site is unknown, MAY be theirs: never "seen",
+        # never "not seen" (scripts/ads_words.py). An ad whose link is known and is not theirs is not.
+        prospect_maybe = None
         if not prospect_match and business:
             for adv in ads_list:
                 adv_name = (adv or {}).get("name", "")
                 if not adv_name:
                     continue
+                if prospect_domain and normalize_domain((adv or {}).get("domain", "")):
+                    continue
                 if name_matcher.name_matches(business, adv_name):
-                    prospect_match = adv_name
+                    prospect_maybe = adv_name
                     break
 
         # Competitors keep the loose name matcher -- false positives there
@@ -855,6 +862,7 @@ def build_ads_per_city(business, competitors, seo_per_city, prospect_website="")
         out[city] = {
             "prospect_running_ads": bool(prospect_match),
             "prospect_match": prospect_match,
+            "prospect_maybe_ad": prospect_maybe,
             "all_advertisers": names,
             "competitors_running_ads": comp_hits,
             # Derived from the SAME per-city SERP record, so it inherits that
@@ -955,7 +963,9 @@ def grade_ads_multi(ads_per_city):
     # could not scan is not one they are absent from, so it leaves the
     # denominator entirely. This grader never had that filter.
     cities = [k for k in ads_per_city
-              if not (ads_per_city.get(k) or {}).get("error")]
+              if not (ads_per_city.get(k) or {}).get("error")
+              and not ((ads_per_city.get(k) or {}).get("prospect_maybe_ad")
+                       and not (ads_per_city.get(k) or {}).get("prospect_running_ads"))]
     total = len(cities)
     found = sum(
         1 for c in cities if (ads_per_city.get(c) or {}).get("prospect_running_ads")
@@ -1193,9 +1203,9 @@ def run_health_check(business, cities, state, listing=None):
         elif advs:
             ads_lines.append(f"{c}: {', '.join(advs)}")
         else:
-            ads_lines.append(f"{c}: No ads detected")
+            ads_lines.append(f"{c}: " + ads_words.none_seen())
     ads_lines.append(
-        f"{business}: {'Running' if business_running_anywhere else 'Not running'}"
+        f"{business}: {ads_words.summary(ads_per_city, list(ads_per_city))}"
     )
     ads_lines.append(f"Grade: {ads_grade}")
     print_section("GOOGLE ADS:", ads_lines)
