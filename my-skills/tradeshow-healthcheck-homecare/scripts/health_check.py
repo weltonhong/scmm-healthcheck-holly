@@ -49,6 +49,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import website_audit  # noqa: E402
 import map_identity  # noqa: E402  (which map card is the prospect)
 import organic_names  # noqa: E402  (real names in the organic Top 3)
+import listing_confirm  # noqa: E402  (the rep confirms the business's own listing)
 import name_matcher  # noqa: E402
 
 
@@ -998,7 +999,7 @@ def print_section(label, body):
 # ----------------------------- main -----------------------------
 
 
-def run_health_check(business, cities, state):
+def run_health_check(business, cities, state, listing=None):
     """cities: list of city names (1-3). First entry is the home city."""
     api_key = get_google_api_key()
     if not api_key:
@@ -1021,21 +1022,28 @@ def run_health_check(business, cities, state):
     print(f"Pulling Google data for {home_city}, {state}...")
     sys.stdout.flush()
     intel = check_google_intel(business, home_city, state)
+    if listing is not None:
+        # The booth app asked the rep "Is this your address?" (scripts/listing_confirm.py).
+        # Not confirmed: nothing is taken from Google's first answer for the name.
+        intel = listing_confirm.apply(intel, listing)
     results["google_intel"] = intel
     target = intel.get("target") or {}
+    # A listing we can stand behind; otherwise every number from it reads "Couldn't check"
+    # (also when the lookup itself failed, which used to print "NOT FOUND" and a full gap).
+    known = listing_confirm.known(target)
     competitors = intel.get("competitors") or []
     # The prospect's own listing's place id: how map cards are matched to
     # them (scripts/map_identity.py, Welton 2026-10-20).
     own_cids = map_identity.own_cids(target, business)
     website = target.get("website", "")
 
-    target_count = target.get("review_count")
+    target_count = (target.get("review_count") or 0) if known else None
     target_rating = target.get("rating")
     print_section(
         "GOOGLE REVIEWS:",
         [
-            f"{target_count if target_count is not None else 'NOT FOUND'} reviews"
-            f", {target_rating if target_rating is not None else '-'} stars"
+            (f"{target_count} reviews, {target_rating if target_rating is not None else '-'} stars"
+             if known else listing_confirm.reason(target))
         ],
     )
 
@@ -1053,7 +1061,7 @@ def run_health_check(business, cities, state):
             ],
         )
         results["top_competitor"] = top_comp
-        gap = (top_comp.get("review_count") or 0) - (target_count or 0)
+        gap = ((top_comp.get("review_count") or 0) - target_count) if known else 0
         if gap > 0:
             severity = "CRITICAL" if gap >= 100 else "SIGNIFICANT" if gap >= 30 else "MODERATE"
             print_section(
@@ -1085,6 +1093,10 @@ def run_health_check(business, cities, state):
 
     # 3-Pack is derived from the same SERP data as the SEO check (one fetch
     # per city gives both organic rank and local pack presence).
+    if not known and isinstance(results.get("website"), dict) and results["website"].get("unverified"):
+        # The website comes from the listing; with none confirmed there is none to read.
+        results["website"]["unverified_reason"] = listing_confirm.reason(target)
+
     results["3pack"] = build_pack_from_seo(cities, results.get("seo", {}))
 
     # Print 3-Pack
@@ -1236,8 +1248,9 @@ def run_health_check(business, cities, state):
     # Print Reviews snapshot
     rev = results.get("reviews", {})
     rev_lines = [
-        f"Google:   {rev.get('google', {}).get('count', '-')} reviews, "
-        f"{rev.get('google', {}).get('rating', '-')} stars",
+        (f"Google:   {rev.get('google', {}).get('count', '-')} reviews, "
+         f"{rev.get('google', {}).get('rating', '-')} stars")
+         if known else "Google:   " + listing_confirm.reason(target),
         f"Facebook: {'Page found' if rev.get('facebook', {}).get('url') else 'Not found'}",
         f"Yelp:     {rev.get('yelp', {}).get('count') or '?'} reviews"
         f" {'(page found)' if rev.get('yelp', {}).get('url') else '(not found)'}",
@@ -1246,7 +1259,7 @@ def run_health_check(business, cities, state):
 
     # Reviews grade is relative to the top competitor when we have one.
     top_comp_reviews = (results.get("top_competitor") or {}).get("review_count") or 0
-    reviews_grade = grade_reviews(target_count, top_comp_reviews)
+    reviews_grade = grade_reviews(target_count, top_comp_reviews) if known else None
 
     # Overall grade
     grades = [

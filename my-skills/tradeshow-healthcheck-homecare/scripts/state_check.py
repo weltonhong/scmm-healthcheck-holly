@@ -55,26 +55,30 @@ def _intel():
 
 
 def check_listing_state(business, city, state, api_key, search=None):
-    """Return (verdict, listings). listings: [(name, address, state)] whose name is the business's."""
+    """Return (verdict, listings): the lookup's places whose name is the business's, each with its "state".
+
+    The same places are what the rep is asked to confirm (scripts/listing_confirm.py), so the
+    app makes this one lookup per scan.
+    """
     gi = _intel()
     search = search or gi.places_search
     places = search("%s %s %s" % (business, city, state), api_key, max_results=3)
     if not isinstance(places, list):
         return STATE_UNCONFIRMED, []
-    own = [(p.get("name", ""), p.get("address", ""), address_state(p.get("address")))
+    own = [dict(p, state=address_state(p.get("address")))
            for p in places if gi.is_same_business(business, p.get("name", ""))]
-    own = [o for o in own if o[2]]
+    own = [o for o in own if o["state"]]
     if not own:
         return STATE_UNCONFIRMED, []
-    if any(o[2] == state for o in own):
+    if any(o["state"] == state for o in own):
         return STATE_OK, own
     return STATE_MISMATCH, own
 
 
 def mismatch_message(business, state, listings):
     """What the rep reads when the scan is refused."""
-    where = "; ".join(addr for _, addr, _ in listings[:2])
-    found = sorted({s for _, _, s in listings})
+    where = "; ".join(o["address"] for o in listings[:2])
+    found = sorted({o["state"] for o in listings})
     return ("Google lists %s in %s (%s), not %s. Choose %s as the state and run it again. "
             "The scan did not run, so nothing was measured in the wrong place."
             % (business, " / ".join(found), where, state, " or ".join(found)))

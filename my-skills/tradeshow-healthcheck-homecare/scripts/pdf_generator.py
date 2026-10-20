@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 
 import headline
+import listing_confirm
 
 import qrcode
 
@@ -358,7 +359,7 @@ def _build_recommendations_top2(results):
     # ----- Reviews: name the competitor and the gap ---------------------
     rc = target.get("review_count") or 0
     comp_rc = top.get("review_count") or 0
-    if comp_rc > 0 and (comp_rc - rc) >= 15:
+    if listing_confirm.known(target) and comp_rc > 0 and (comp_rc - rc) >= 15:
         comp_name = top.get("name", "your top competitor")
         score = min(99, (comp_rc - rc))
         candidates.append((score,
@@ -575,9 +576,9 @@ def build_pdf(results):
     rating = target.get("rating")
     maps_url = target.get("maps_url") or ""
     reviews_detail = (
-        f"<b>{rc if rc is not None else '-'}</b> reviews, "
+        f"<b>{rc if rc is not None else 0}</b> reviews, "
         f"<b>{rating if rating is not None else '-'}</b> stars"
-    )
+    ) if listing_confirm.known(target) else listing_confirm.reason(target)
     if maps_url:
         reviews_detail += (
             f'  <a href="{maps_url}" color="#29ABE2">'
@@ -686,7 +687,7 @@ def build_pdf(results):
 
     if web.get("unverified"):
         reason = web.get("unverified_reason") or web.get("error") or "blocked"
-        web_detail = f"Unable to verify -- {reason}"
+        web_detail = reason if reason.startswith("Couldn't check") else f"Unable to verify -- {reason}"
         web_grade_display = "N/A"
     else:
         c = web.get("checks", {})
@@ -749,7 +750,7 @@ def build_pdf(results):
 
     rows = [
         ["AREA", "GRADE", "DETAILS"],
-        [area("Google Reviews"), grades.get("reviews", "F"), cell(reviews_detail)],
+        [area("Google Reviews"), grades.get("reviews") or "N/A", cell(reviews_detail)],
         [area("Google Local Map Rankings"), grades.get("3pack", "F"), cell(pack_detail)],
         [area("Google Organic Rankings (SEO)"), grades.get("seo", "F"), cell(seo_detail)],
         [area("Google Ads"), grades.get("ads", "F"), cell(ads_detail)],

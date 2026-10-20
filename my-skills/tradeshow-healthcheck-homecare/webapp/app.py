@@ -77,6 +77,8 @@ import state_check  # noqa: E402
 importlib.reload(state_check)
 import sheet_archive  # noqa: E402
 importlib.reload(sheet_archive)
+import listing_confirm  # noqa: E402
+importlib.reload(listing_confirm)
 
 
 # ----------------------------------------------------------------------------
@@ -127,11 +129,11 @@ class _QueueWriter(io.TextIOBase):
             self._buf = ""
 
 
-def _run_in_thread(business, cities, state, q, result_box):
+def _run_in_thread(business, cities, state, q, result_box, listing=None):
     writer = _QueueWriter(q)
     try:
         with redirect_stdout(writer), redirect_stderr(writer):
-            results = health_check.run_health_check(business, cities, state)
+            results = health_check.run_health_check(business, cities, state, listing=listing)
         writer.flush()
         result_box["results"] = results
     except Exception as e:
@@ -250,6 +252,8 @@ if submitted:
     st.session_state["pdf_bytes"] = None  # never hand the next prospect the last sheet
     st.session_state["archive_done"] = False
     st.session_state["archive_note"] = None
+    st.session_state["listing_lookup"] = None   # one Google lookup per scan
+    st.session_state["listing_answer"] = None   # "Is this your address?" not asked yet
     st.session_state["form_values"] = {
         "business": business.strip(),
         "home_city": home_city.strip(),
@@ -271,18 +275,72 @@ def _validate(values):
     return missing
 
 
+def _listing_lookup(values):
+    """The business's own Google listings, looked up once per scan (the state check and the question share it)."""
+    if st.session_state.get("listing_lookup") is None:
+        st.session_state["listing_lookup"] = state_check.check_listing_state(
+            values["business"], values["home_city"], values["state"],
+            os.environ.get("GOOGLE_API_KEY"))
+    return st.session_state["listing_lookup"]
+
+
 def _state_refusal(values):
     """The refusal text when the chosen state contradicts the business's own Google listing.
 
     See scripts/state_check.py (Welton, 2026-10-20: the La Paloma sheet was
     measured in New York because the dropdown came preset). None means scan.
     """
-    verdict, listings = state_check.check_listing_state(
-        values["business"], values["home_city"], values["state"],
-        os.environ.get("GOOGLE_API_KEY"))
+    verdict, listings = _listing_lookup(values)
     if verdict == state_check.STATE_MISMATCH:
         return state_check.mismatch_message(values["business"], values["state"], listings)
     return None
+
+
+def _listing_answer(values):
+    """Ask "Is this your address?" and return the listing to scan with (scripts/listing_confirm.py).
+
+    Welton, 2026-10-20: the rep turns and asks the owner. No, None of these, or no answer
+    within the wait all mean the same: nothing is taken from Google's guess.
+    """
+    answer = st.session_state.get("listing_answer")
+    if answer is not None:
+        return answer
+    verdict, listings = _listing_lookup(values)
+    found = [l for l in listings if l.get("state") == values["state"]] if verdict == state_check.STATE_OK else []
+    if not found:
+        st.session_state["listing_answer"] = listing_confirm.not_confirmed(listing_confirm.NOT_FOUND)
+        return st.session_state["listing_answer"]
+
+    holder = st.empty()
+    picked = None
+    with holder.container(border=True):
+        if len(found) == 1:
+            st.markdown("### Is this your address?")
+            st.markdown("**%s**" % found[0].get("address", ""))
+            st.caption("Google lists %s there." % found[0].get("name", values["business"]))
+            yes, no = st.columns(2)
+            if yes.button("Yes", key="listing_pick_0", type="primary", use_container_width=True):
+                picked = found[0]
+            if no.button("No", key="listing_none", use_container_width=True):
+                picked = listing_confirm.not_confirmed(listing_confirm.SAID_NO)
+        else:
+            st.markdown("### Which one is your address?")
+            for i, l in enumerate(found):
+                if st.button(l.get("address", ""), key="listing_pick_%d" % i, use_container_width=True):
+                    picked = l
+            if st.button("None of these", key="listing_none", use_container_width=True):
+                picked = listing_confirm.not_confirmed(listing_confirm.SAID_NO)
+        clock = st.empty()
+    if picked is None:
+        if listing_confirm.wait_seconds() == 0:
+            st.stop()   # screen tests only: wait for the click, no timer
+        for left in range(listing_confirm.wait_seconds(), 0, -1):
+            clock.caption("Ask the owner. The scan starts in %d seconds either way." % left)
+            time.sleep(1)
+        picked = listing_confirm.not_confirmed(listing_confirm.NO_ANSWER)
+    holder.empty()
+    st.session_state["listing_answer"] = picked
+    return picked
 
 
 # ----------------------------------------------------------------------------
@@ -305,6 +363,7 @@ if st.session_state.get("scan_started") and not st.session_state.get("scan_done"
         st.error(refusal)
         st.session_state["scan_started"] = False
     else:
+        listing = _listing_answer(values)
         cities = [values["home_city"]]
         if values["second_city"]:
             cities.append(values["second_city"])
@@ -319,7 +378,7 @@ if st.session_state.get("scan_started") and not st.session_state.get("scan_done"
         result_box = {}
         worker = threading.Thread(
             target=_run_in_thread,
-            args=(values["business"], cities, values["state"], q, result_box),
+            args=(values["business"], cities, values["state"], q, result_box, listing),
             daemon=True,
         )
         worker.start()
@@ -416,7 +475,8 @@ if st.session_state.get("scan_done"):
         with st.expander("Reviews", expanded=False):
             tgt = (results.get("google_intel") or {}).get("target") or {}
             comp = results.get("top_competitor") or {}
-            st.write(f"**Target:** {tgt.get('review_count', '-')} reviews, {tgt.get('rating', '-')} stars")
+            st.write(f"**Target:** {tgt.get('review_count') or 0} reviews, {tgt.get('rating', '-')} stars"
+                     if listing_confirm.known(tgt) else "**Target:** " + listing_confirm.reason(tgt))
             if comp:
                 st.write(
                     f"**Top competitor:** {comp.get('name', '?')} -- "
