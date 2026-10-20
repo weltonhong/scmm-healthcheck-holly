@@ -73,6 +73,8 @@ import health_check  # noqa: E402
 import pdf_generator  # noqa: E402
 importlib.reload(health_check)
 importlib.reload(pdf_generator)
+import state_check  # noqa: E402
+importlib.reload(state_check)
 
 
 # ----------------------------------------------------------------------------
@@ -230,7 +232,7 @@ US_STATES = [
 with st.form("health_check_form", clear_on_submit=False):
     business = st.text_input("Business Name", placeholder="e.g., Comfort Keepers")
     home_city = st.text_input("Home City", placeholder="e.g., Tampa")
-    state = st.selectbox("State", US_STATES, index=US_STATES.index("FL"))
+    state = st.selectbox("State", US_STATES, index=None, placeholder="Choose the business's state")
     second_city = st.text_input("Second City (optional)", placeholder="leave blank to skip")
     third_city = st.text_input("Third City (optional)", placeholder="leave blank to skip")
     submitted = st.form_submit_button("Run Health Check", type="primary")
@@ -246,7 +248,7 @@ if submitted:
     st.session_state["form_values"] = {
         "business": business.strip(),
         "home_city": home_city.strip(),
-        "state": state.strip(),
+        "state": (state or "").strip(),
         "second_city": second_city.strip(),
         "third_city": third_city.strip(),
     }
@@ -264,6 +266,20 @@ def _validate(values):
     return missing
 
 
+def _state_refusal(values):
+    """The refusal text when the chosen state contradicts the business's own Google listing.
+
+    See scripts/state_check.py (Welton, 2026-10-20: the La Paloma sheet was
+    measured in New York because the dropdown came preset). None means scan.
+    """
+    verdict, listings = state_check.check_listing_state(
+        values["business"], values["home_city"], values["state"],
+        os.environ.get("GOOGLE_API_KEY"))
+    if verdict == state_check.STATE_MISMATCH:
+        return state_check.mismatch_message(values["business"], values["state"], listings)
+    return None
+
+
 # ----------------------------------------------------------------------------
 # Run the scan (synchronous from Streamlit's POV but with live polling)
 # ----------------------------------------------------------------------------
@@ -279,6 +295,9 @@ if st.session_state.get("scan_started") and not st.session_state.get("scan_done"
             "GOOGLE_API_KEY is not set. Add it to Streamlit Cloud secrets or "
             "your environment and reload."
         )
+        st.session_state["scan_started"] = False
+    elif (refusal := _state_refusal(values)):
+        st.error(refusal)
         st.session_state["scan_started"] = False
     else:
         cities = [values["home_city"]]
