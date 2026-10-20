@@ -664,6 +664,13 @@ def fetch_serp_google_api(query, city, api_key, timeout=120):
     if not isinstance(d, dict) or "organic_results" not in d:
         raise RuntimeError("ScrapingBee google API response carries no "
                            "organic_results key (structural failure)")
+    # An EMPTY page one is a failed search, never "not found" (Welton,
+    # 2026-10-20). The key being present is not enough: the April sheets
+    # printed empty pages as misses, and the same searches re-run on 10-20
+    # all came back full (ops/receipts/20261020T102751_booth-serp-recorded.txt).
+    # Tests: test_booth_empty_is_couldnt_check.py.
+    if not d.get("organic_results"):
+        raise RuntimeError("search came back with an empty page one")
     return d
 
 

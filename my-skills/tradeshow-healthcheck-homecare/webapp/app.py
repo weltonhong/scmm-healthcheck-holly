@@ -407,8 +407,15 @@ if st.session_state.get("scan_done"):
             pack = results.get("3pack") or {}
             for c, d in (pack.get("results") or {}).items():
                 top3 = ", ".join((d.get("top_3") or [])[:3]) or "—"
-                if d.get("in_3_pack"):
+                # Same three answers as the PDF (Welton, 2026-10-20): a failed search
+                # and an empty pack are never shown as "Not found".
+                if d.get("error"):
+                    st.write(f"**{c}:** Couldn't check this search")
+                elif d.get("in_3_pack"):
                     st.write(f"**{c}:** Found at rank {d.get('rank')} (Top 3: {top3})")
+                elif not [t for t in (d.get("top_3") or []) if t]:
+                    st.write(f"**{c}:** " + ("Google shows no map pack for this search"
+                             if d.get("confirmed_empty") else "Map results unconfirmed for this search"))
                 else:
                     st.write(f"**{c}:** Not found (Top 3: {top3})")
 
@@ -417,10 +424,16 @@ if st.session_state.get("scan_done"):
                 rank = d.get("rank")
                 top3 = ", ".join((d.get("top_3") or [])[:3]) or "—"
                 rank_txt = f"Rank {rank}" if rank else "Not in top 10"
+                if d.get("error"):
+                    st.write(f"**{c}:** Couldn't check this search")
+                    continue
                 st.write(f"**{c}:** {rank_txt} (Top 3: {top3})")
 
         with st.expander("Google Ads", expanded=False):
             for c, d in (results.get("ads") or {}).items():
+                if d.get("error"):
+                    st.write(f"**{c}:** Couldn't check this search")
+                    continue
                 advs = ", ".join(d.get("all_advertisers") or []) or "No ads detected"
                 st.write(f"**{c}:** {advs}")
                 if d.get("prospect_running_ads"):

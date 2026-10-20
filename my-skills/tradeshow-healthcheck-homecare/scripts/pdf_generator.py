@@ -305,7 +305,9 @@ def estimate_lost_calls(results):
         # a prospect. Skipping understates; inventing is not an option.
         if pack_c.get("error"):
             continue
-        if not pack_c.get("in_3_pack"):
+        # An empty pack is not a missed 3-Pack: grade_3pack_multi leaves it out,
+        # and so does this estimate (Welton, 2026-10-20).
+        if not pack_c.get("in_3_pack") and [t for t in (pack_c.get("top_3") or []) if t]:
             low += 5 * mult
             high += 10 * mult
         d = ads_per_city.get(c) or {}
@@ -828,7 +830,7 @@ def build_pdf(results):
         thing, is a trap for the next reader; this one is the renderer.
         """
         if not d or "error" in d:
-            return "ERROR"
+            return "Couldn't check this search"
         top_3 = d.get("top_3") or []
         if not top_3:
             if d.get("confirmed_empty"):
@@ -868,7 +870,7 @@ def build_pdf(results):
             # The prospect is handed this PDF. A failed fetch must not appear
             # on it as a finding about their rankings.
             seo_lines_html.append(
-                f"<b>{c}:</b> ERROR ({str(d.get('error'))[:60]})")
+                f"<b>{c}:</b> Couldn't check this search")
             continue
         if not cleaned:
             seo_lines_html.append(
@@ -920,7 +922,7 @@ def build_pdf(results):
             # The prospect is handed this PDF. A failed fetch must not appear
             # on it as a finding about their advertising.
             ads_lines.append(
-                f"<b>{c}:</b> ERROR ({str(d.get('error'))[:60]})")
+                f"<b>{c}:</b> Couldn't check this search")
         elif advs:
             ads_lines.append(f"<b>{c}:</b> {', '.join(advs)}")
         else:
