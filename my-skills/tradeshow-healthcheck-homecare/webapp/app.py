@@ -66,19 +66,40 @@ def _hydrate_env_from_secrets():
 _hydrate_env_from_secrets()
 
 # Now safe to import the scoring scripts.
-# Force a fresh reload on every Streamlit rerun so the app picks up code
-# changes after a git push without requiring a full container reboot.
+# Every booth module is re-read whenever any booth code file changed. Streamlit Cloud puts a push's
+# files on disk WITHOUT restarting the app, and Python keeps a module it has already imported. This
+# block used to reload five modules, so the rest (the website check among them) ran old code until the
+# app restarted: Welton's 4:25 pm La Paloma run, 2026-10-20, had the new address question and the old
+# website check. Pinned by tradeshow-healthcheck-homecare/scripts/test_booth_code_reload.py.
+import hashlib  # noqa: E402
 import importlib  # noqa: E402
+
+_INTEL_DIR = SCRIPTS_DIR.parents[1] / "quick-intel" / "scripts"
+_BOOTH_MODULES = ("name_matcher", "pack_identity", "map_identity", "hook_generator", "name_format",
+                  "organic_names", "website_audit", "google_intel", "headline", "listing_confirm",
+                  "state_check", "sheet_archive", "health_check", "pdf_generator")
+
+
+def _code_version():
+    """A short fingerprint of every booth code file this app runs (shown at the foot of the page)."""
+    h = hashlib.sha256()
+    for p in sorted(SCRIPTS_DIR.glob("*.py")) + sorted(_INTEL_DIR.glob("google_intel.py")):
+        h.update(p.name.encode("utf-8"))
+        h.update(p.read_bytes())
+    return h.hexdigest()[:8]
+
+
+CODE_VERSION = _code_version()
 import health_check  # noqa: E402
 import pdf_generator  # noqa: E402
-importlib.reload(health_check)
-importlib.reload(pdf_generator)
 import state_check  # noqa: E402
-importlib.reload(state_check)
 import sheet_archive  # noqa: E402
-importlib.reload(sheet_archive)
 import listing_confirm  # noqa: E402
-importlib.reload(listing_confirm)
+if getattr(health_check, "_booth_code_version", None) != CODE_VERSION:
+    for _name in _BOOTH_MODULES:
+        if _name in sys.modules:
+            importlib.reload(sys.modules[_name])
+    health_check._booth_code_version = CODE_VERSION
 
 
 # ----------------------------------------------------------------------------
@@ -583,3 +604,7 @@ if st.session_state.get("scan_done"):
             st.session_state["archive_note"] = None if saved else sheet_archive.REP_NOTE % where
         if st.session_state.get("archive_note"):
             st.warning(st.session_state["archive_note"])
+
+
+# The code version, so anyone can see this app runs the latest booth code (Welton 2026-10-20).
+st.caption("Booth code %s" % CODE_VERSION)
