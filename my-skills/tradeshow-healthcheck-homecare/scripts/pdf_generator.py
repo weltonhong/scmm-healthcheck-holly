@@ -810,6 +810,10 @@ def build_pdf(results):
         print(f"QR generation failed: {e}")
         CTAFooterCanvas.qr_png_bytes = None
 
+    # A trailing Spacer that does not fit at the foot of the last page starts a page of its own, which then
+    # carries only the footer bar (the La Paloma sheet, 2026-10-20: "Page 3 is blank except the footer").
+    while story and isinstance(story[-1], Spacer):
+        story.pop()
     doc.build(story, canvasmaker=CTAFooterCanvas)
     return str(out_path)
 
