@@ -553,7 +553,7 @@ if st.session_state.get("scan_done"):
         with st.expander("Website", expanded=False):
             web = results.get("website") or {}
             if web.get("unverified"):
-                st.write(f"Unable to verify -- {web.get('unverified_reason', 'blocked')}")
+                st.write(web.get('unverified_reason') if str(web.get('unverified_reason', '')).startswith("Couldn't check") else f"Unable to verify -- {web.get('unverified_reason', 'blocked')}")
             else:
                 checks = web.get("checks") or {}
                 psi = web.get("pagespeed_score")

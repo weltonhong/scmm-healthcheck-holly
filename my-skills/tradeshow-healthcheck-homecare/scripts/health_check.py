@@ -645,7 +645,7 @@ def check_website(website):
     if is_blocked or (result.get("error") and not result.get("checks")):
         result["grade"] = None
         result["unverified"] = True
-        result["unverified_reason"] = "Website blocked our scan"
+        result["unverified_reason"] = result.get("unverified_reason") or "Website blocked our scan"
     return result
 
 
@@ -1216,7 +1216,7 @@ def run_health_check(business, cities, state, listing=None):
     if web.get("unverified"):
         reason = web.get("unverified_reason") or web.get("error") or "blocked"
         print_section("WEBSITE:", [
-            f"Unable to verify -- {reason}",
+            reason if reason.startswith("Couldn't check") else f"Unable to verify -- {reason}",
             "Grade: not counted in overall",
         ])
         web_grade = None

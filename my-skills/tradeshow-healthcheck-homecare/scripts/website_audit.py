@@ -66,6 +66,24 @@ def get_google_api_key():
 # error, no connection), and when a site refused the address probes. Now every fetch and probe made
 # while a check runs notes the pages it could not read, and measured() turns that check's No into None
 # ("Couldn't check"). A Yes stands (it was seen); a page that is not there (404/410) is still a No.
+
+# ---- A homepage that loads with almost nothing readable is built in the browser (Welton, 2026-10-20) ----
+# Measured on 200 sites from the saved runs (ops/receipts/20261020T171217_script-built-homepages-measured.txt):
+# 19 of 81 funeral home homepages came back with 18 to 65 readable characters (one platform: Tribute /
+# FrontRunner / FuneralTech) and 1,000 to 8,000 once a browser ran their scripts; the thinnest real page
+# had 415. The booth printed 2 to 4 "No"s on each, 13 of them provably false ("Pre-need form: No" beside
+# a pre-planning link). Under MIN_READABLE_CHARS the website reads "Couldn't check", no grade.
+MIN_READABLE_CHARS = 200
+SCRIPT_BUILT_REASON = "Couldn't check (site loads its content in the browser)"
+
+
+def readable_chars(html):
+    t = re.sub(r"(?is)<(script|style|noscript|template)\b.*?</\1>", " ", html or "")
+    t = re.sub(r"(?s)<!--.*?-->", " ", t)
+    t = re.sub(r"<[^>]+>", " ", t)
+    t = re.sub(r"&[a-z#0-9]+;", " ", t)
+    return len(" ".join(t.split()))
+
 _reads = threading.local()
 
 
@@ -494,6 +512,17 @@ def audit(url):
             "error": f"HTTP {status}",
             "checks": {},
             "grade": "F",
+        }
+
+    if readable_chars(html) < MIN_READABLE_CHARS:
+        return {
+            "url": final_url,
+            "status": status,
+            "error": "site loads its content in the browser",
+            "checks": {},
+            "grade": None,
+            "unverified": True,
+            "unverified_reason": SCRIPT_BUILT_REASON,
         }
 
     base_url = base_origin(final_url)
