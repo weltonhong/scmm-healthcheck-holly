@@ -226,6 +226,18 @@ class ScanCoverage:
                 % (self.tp_ok, self.tp_total, self.seo_ok, self.seo_total))
 
 
+def map_read(row):
+    """True when this 3-Pack row's search came back with a map we read, so the
+    prospect can be in it or missing from it. A search with no map card (no
+    map shown, or one we could not read) is neither, and is counted nowhere
+    (Welton 2026-10-21, the pre-call and Where Are You rule). Rows saved before
+    2026-10-21 carry no pack_present and keep the meaning they were built with
+    (past cards are not corrected, Welton 2026-10-14)."""
+    if row.get("error"):
+        return False
+    return row.get("pack_present", True) is True
+
+
 def scan_coverage(three_pack_rows, seo_rows):
     """Count successful vs attempted searches per section.
 
@@ -2271,7 +2283,9 @@ def build_3pack_hook(owner_name, company, vertical, home_city, state,
     # no rank, so counting it would inflate the denominator and turn "we
     # couldn't scan 6 of 12" into "you rank in none of 12" -- a false claim
     # the setter reads to the prospect as fact.
-    scored_rows = [r for r in three_pack_rows if not r.get("error")]
+    # Nor can a search that came back with no map (map_read): nobody can be
+    # missing from a map we did not read (Welton 2026-10-21).
+    scored_rows = [r for r in three_pack_rows if map_read(r)]
     total = len(scored_rows)
     in_pack = sum(1 for r in scored_rows if r.get("rank"))
     pct = (in_pack / total) if total > 0 else 0.0
@@ -2297,8 +2311,8 @@ def build_3pack_hook(owner_name, company, vertical, home_city, state,
     slip_noun = SLIPPAGE_PAIN_NOUN.get(vertical, "cases")
 
     if total == 0:
-        # Every 3-Pack search in this section FAILED. We have no measurement,
-        # so we make no claim: no hook at all. This used to fall through to
+        # Every 3-Pack search in this section FAILED or read no map. We have no
+        # measurement, so we make no claim: no hook at all. This used to fall through to
         # WHY_3PACK_NO_WINNER and tell the prospect nobody was in the map.
         return None
 
