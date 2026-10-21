@@ -444,6 +444,28 @@ def parse_ads_from_html(html):
     return advertisers
 
 
+# The same map traces the pre-call reader counts (serp_screenshot.extract_three_pack_data: div.ixix9e, div.VkpGBb,
+# div.cXedhc, directions and place links), read from the saved HTML. Ported from Where Are You's
+# serp_helpers._no_cards (Welton 2026-10-21).
+_MAP_TRACES = re.compile(r'class="[^"]*\b(?:ixix9e|VkpGBb|cXedhc)\b|/maps/dir/|/maps/place/', re.IGNORECASE)
+_RESULTS_PAGE = re.compile(r'id="(?:search|rso)"', re.IGNORECASE)
+
+
+def _no_cards(html, containers=0):
+    """No map card was read. pack_present False (no map shown) only when the page was read and carries no map
+    trace at all; None (could not check) when the page was not read or a map is on it that no card came from."""
+    out = {"rank": None, "in_3_pack": False, "maybe_rank": None, "top_3": [], "card_ids": []}
+    if not (_RESULTS_PAGE.search(html or "") and "<h3" in (html or "")):
+        return dict(out, pack_present=None, pack_read="could not check: the results page was not read")
+    traces = len(_MAP_TRACES.findall(html or ""))
+    if traces:
+        return dict(out, pack_present=None, pack_read=(
+            "could not check: map on the page (%d map element(s), %d card container(s)) but no card could be read"
+            % (traces, containers)))
+    return dict(out, pack_present=False, pack_read="no map shown: the results page was read and has no map pack, "
+                                                  "map card or map link")
+
+
 def parse_local_pack_from_html(html, business_name):
     """
     Extract Google 3-Pack (Local Map Pack) listings from a SERP HTML page.
@@ -454,7 +476,16 @@ def parse_local_pack_from_html(html, business_name):
       - Card heading: div[role="heading"] or span.OSrXXb
 
     Returns:
-        {"rank": 1-based position or None, "in_3_pack": bool, "top_3": [names]}
+        {"rank": 1-based position or None, "in_3_pack": bool, "top_3": [names],
+         "pack_present": True / False / None, "pack_read": why}
+
+    pack_present is THREE-WAY (Welton 2026-10-21, the pre-call and Where Are You rule):
+      True   map cards were read
+      False  no map shown: the page was read and carries no map pack, card or map link
+      None   could not check: the page was not read, or map traces are on it but no card
+             could be read (a layout we do not know). Until 10-21 both empty cases read
+             the same, and confirm_empty_pack could print "Google shows no map pack" over
+             a map we simply failed to read.
     """
     # Find all VkpGBb cards anywhere in the HTML. They only appear inside the
     # local pack container, so we don't need to scope to a parent first.
@@ -471,7 +502,7 @@ def parse_local_pack_from_html(html, business_name):
         )
         starts = [m.start() for m in card_pattern.finditer(html)]
         if not starts:
-            return {"rank": None, "in_3_pack": False, "top_3": []}
+            return _no_cards(html)
 
     # Slice each card from its own start to the next card start (or +5KB cap
     # for the last one). This gives a workable HTML chunk per card.
@@ -517,9 +548,12 @@ def parse_local_pack_from_html(html, business_name):
             continue
         cards.append(name)
 
+    if not cards:                     # card containers, but none read (or all sponsored)
+        return _no_cards(html, len(starts))
     # Local pack is at most 3 cards. The page HTML carries no place id, so
     # map_identity judges by pre-call's name rules only (Welton 2026-10-20).
-    return map_identity.judge_pack([(n, None) for n in cards], business_name, ())
+    return dict(map_identity.judge_pack([(n, None) for n in cards], business_name, ()),
+                pack_present=True, pack_read="read %d map card(s)" % len(cards[:3]))
 
 
 def parse_organic_rank_from_html(html, business_name, domain):
@@ -749,6 +783,13 @@ def confirm_empty_pack(query, city, api_key, doc, business_name, own_cids=()):
         second["confirmed_empty"] = False
         second["pack_note"] = "recovered from the second path"
         return second, second["pack_note"]
+    # The second path confirms "no map" only when it READ the page and found no
+    # map on it (pack_present False). A page it could not read, or one with a map
+    # it could not read a card from, confirms nothing (Welton 2026-10-21).
+    if second.get("pack_present") is not False:
+        lp["confirmed_empty"] = False
+        lp["pack_note"] = "second path %s" % second.get("pack_read", "could not check")
+        return lp, lp["pack_note"]
     lp["confirmed_empty"] = bool(location)
     lp["pack_note"] = ("both paths agree, location %r" % location if location
                        else "both paths empty but the endpoint did not "
