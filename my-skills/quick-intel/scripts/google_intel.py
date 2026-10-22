@@ -268,6 +268,19 @@ def _compact(s):
     return "".join(s.split())
 
 
+def _same_place(a, b):
+    """Two Places results are the same listing: the same place id in the maps link, or the same address."""
+    def cid(u):
+        m = re.search(r"[?&]cid=(\d+)", u or "")
+        return m.group(1) if m else ""
+    ca, cb = cid(a.get("maps_url")), cid(b.get("maps_url"))
+    if ca and cb:
+        return ca == cb
+    na = " ".join(re.findall(r"[a-z0-9]+", (a.get("address") or "").lower()))
+    nb = " ".join(re.findall(r"[a-z0-9]+", (b.get("address") or "").lower()))
+    return bool(na) and na == nb
+
+
 def is_same_business(target_name, candidate_name):
     """Fuzzy match for target-vs-competitor. Handles 'Greenwood' vs
     'Green-Wood' (hyphen becomes space), 'The X' vs 'X', and
@@ -341,9 +354,10 @@ def main():
     if isinstance(competitor_results, list):
         for c in competitor_results:
             cname = c.get("name", "") or ""
-            if is_same_business(args.business, cname):
-                if target and not target.get("review_count") and c.get("review_count"):
-                    target = c
+            # The target itself, by its place (maps link) or street address, never by a shared name prefix:
+            # "Smithfield" is not "Smith", "Guardian Angels" is not "Angels" (Welton 2026-10-21). The target is
+            # never swapped for a same-name listing with more reviews.
+            if target and _same_place(c, target):
                 continue
             if not matches_vertical(c, config):
                 continue
@@ -369,6 +383,8 @@ def main():
         "outcome_questions": config["outcome_qs"],
         "query_target": target_query,
         "query_competitors": competitor_query,
+        # The competitor lookup failed: "no competitors" would be a measured nothing (Welton 2026-10-21).
+        "competitors_error": competitor_results.get("error") if isinstance(competitor_results, dict) else None,
     }
 
     print(json.dumps(output, indent=2))

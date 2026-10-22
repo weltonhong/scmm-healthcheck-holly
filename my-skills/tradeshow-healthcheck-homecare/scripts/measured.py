@@ -29,6 +29,7 @@ tradeshow-healthcheck-homecare/scripts/test_booth_nothing_from_a_failure.py fail
 apart, and proves the rule on a scan where every search and lookup fails, in all five tools.
 """
 import datetime
+import re
 import urllib.parse
 
 POINTS = {"A": 4, "B": 3, "C": 2, "D": 1, "F": 0}
@@ -239,3 +240,27 @@ def organic_unread(rank, results, their_site):
                   if page_verdict(r.get("url") or r.get("domain"), their_site) == CANT_TELL), None)
     return {"organic_error": ("a page on their company's website ranks; could not confirm it is theirs"
                               if maybe else None), "organic_maybe": maybe}
+
+
+# ------------------------------------------------ the prospect's own listing among competitors --
+# Welton 2026-10-21: the self-filter dropped real rivals ("Guardian Angels Home Health" for "Angels Home
+# Health", Smithfield for Smith), and a dropped rival can turn into telling an owner they lead their market.
+# A competitor is the prospect's own listing only when it IS that listing: the same Google place id, or the
+# same street address. With no listing to compare, only an identical name.
+
+
+def _norm(s):
+    return " ".join(re.findall(r"[a-z0-9]+", (s or "").lower()))
+
+
+def same_listing(candidate, target, business=""):
+    """True when a competitor from the lookup is the prospect's own listing."""
+    import map_identity
+    c, t = candidate or {}, target or {}
+    cc, tc = map_identity.cid_of(c.get("maps_url")), map_identity.cid_of(t.get("maps_url"))
+    if cc and tc:
+        return cc == tc
+    ca, ta = _norm(c.get("address")), _norm(t.get("address"))
+    if ca and ta:
+        return ca == ta
+    return bool(_norm(c.get("name"))) and _norm(c.get("name")) in (_norm(business), _norm(t.get("name")))

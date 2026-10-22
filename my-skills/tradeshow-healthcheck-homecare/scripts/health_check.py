@@ -678,16 +678,20 @@ def check_reviews_snapshot(business, city, state, google_data):
     }
 
     fb_results = ddg_html_search(f'"{business}" {city} {state} site:facebook.com')
-    snapshot["facebook"]["checked"] = fb_results is not None
+    snapshot["facebook"]["checked"] = fb_results is not None and not (
+        not snapshot["facebook"]["url"] and any("facebook.com" in r["url"] for r in (fb_results or [])))
     for r in (fb_results or [])[:5]:
-        if "facebook.com" in r["url"] and "/pages" not in r["url"]:
+        # Theirs only when the page's title carries their name; a page that does not is not "found", and
+        # pages that came back unnamed make it couldn't check (Welton 2026-10-21).
+        if "facebook.com" in r["url"] and "/pages" not in r["url"] and name_matcher.name_matches(r.get("title") or "", business):
             snapshot["facebook"]["url"] = r["url"]
             break
 
     yelp_results = ddg_html_search(f'"{business}" {city} {state} site:yelp.com')
-    snapshot["yelp"]["checked"] = yelp_results is not None
+    snapshot["yelp"]["checked"] = yelp_results is not None and not (
+        not snapshot["yelp"]["url"] and any("yelp.com/biz" in r["url"] for r in (yelp_results or [])))
     for r in (yelp_results or [])[:5]:
-        if "yelp.com/biz" in r["url"]:
+        if "yelp.com/biz" in r["url"] and name_matcher.name_matches(r.get("title") or "", business):
             snapshot["yelp"]["url"] = r["url"]
             m = re.search(r"(\d+)\s+reviews?", r["title"], re.IGNORECASE)
             if m:
@@ -974,6 +978,10 @@ def grade_seo_multi(seo_per_city):
 
 
 def grade_ads_multi(ads_per_city):
+    """Not graded (Welton 2026-10-21): one look per search shows what was seen, not whether they advertise.
+    An F from one look was a claim nothing measured, and an A from one look is no stronger; the row reports
+    what was seen (scripts/ads_words.py) and the overall grade is over the graded rows."""
+    return None
     # Same reasoning as grade_3pack_multi and grade_seo_multi: one we
     # could not scan is not one they are absent from, so it leaves the
     # denominator entirely. This grader never had that filter.
@@ -1067,13 +1075,14 @@ def run_health_check(business, cities, state, listing=None):
         ],
     )
 
+    competitors = [c for c in competitors if not measured.same_listing(c, target, business)]
     if competitors:
         top_comp = max(
             competitors,
             key=lambda c: (c.get("review_count") or 0),
         )
         print_section(
-            "TOP COMPETITOR:",
+            "MOST-REVIEWED NEARBY LISTING:",
             [
                 f"{top_comp.get('name', '?')}: "
                 f"{top_comp.get('review_count') or 0} reviews, "
@@ -1083,10 +1092,9 @@ def run_health_check(business, cities, state, listing=None):
         results["top_competitor"] = top_comp
         gap = ((top_comp.get("review_count") or 0) - target_count) if known else 0
         if gap > 0:
-            severity = "CRITICAL" if gap >= 100 else "SIGNIFICANT" if gap >= 30 else "MODERATE"
             print_section(
                 "REVIEW GAP:",
-                [f"{gap} reviews behind ({severity})"],
+                [f"{gap} reviews behind"],
             )
             results["review_gap"] = gap
 
@@ -1256,7 +1264,7 @@ def run_health_check(business, cities, state, listing=None):
             f"PageSpeed mobile:        {psi_display}",
             f"About/Team page:         {yn(c.get('about_team_page'), 'Yes', 'No (generic or missing)')}",
             f"Recent blog (6mo):       {yn(c.get('blog_recent'), 'Yes', 'No')}, {blog_display}",
-            f"Intake form/widget:      {yn(c.get('intake_form'), 'Yes', 'No (phone only)')}",
+            f"Intake form/widget:      {yn(c.get('intake_form'), 'Yes', 'Not on the homepage')}",
             f"LocalBusiness schema:    {yn(c.get('localbusiness_schema'), 'Yes', 'No')}",
             f"Google reviews widget:   {yn(c.get('google_reviews_widget'), 'Yes', 'No')}",
             f"Grade: {web.get('grade') or 'none (too little could be read)'}",

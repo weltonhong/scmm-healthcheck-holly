@@ -176,6 +176,9 @@ class CTAFooterCanvas(pdfcanvas.Canvas):
         ]
 
         all_lines = tagline + contact
+        if not getattr(CTAFooterCanvas, "gaps_measured", True):
+            # "Every week these gaps stay open" only beside a gap the sheet measured (Welton 2026-10-21).
+            all_lines = [(f, z, "") for f, z, _ in tagline[:2]] + all_lines[2:]
         text_center_x = (text_left + text_right) / 2
         for (font, size, text), y in zip(all_lines, positions):
             self.setFont(font, size)
@@ -353,8 +356,7 @@ def _build_recommendations_top2(results):
             score = 100 + len(missing_packs) * 8
             candidates.append((score,
                 f"<b>{comps}</b> own the Google Map Pack in {target_city}. When a family "
-                f"searches \"home care {target_city}\", those agencies get the call. Your name is not in the top 3 on the map. Every search is a family that picks up the phone and "
-                f"dials your competitor instead of you."
+                f"searches \"home care {target_city}\", those agencies get the call. Your name is not in the top 3 on the map."
             ))
 
     # ----- Reviews: name the competitor and the gap ---------------------
@@ -366,8 +368,7 @@ def _build_recommendations_top2(results):
         candidates.append((score,
             f"You have <b>{rc}</b> Google reviews. {comp_name} has <b>{comp_rc}</b>. When two "
             f"agencies show up side by side and one has {comp_rc} reviews to your {rc}, families call them "
-            f"first and you hear nothing. Every week the gap widens, more inquiries pour into "
-            f"their phone and not yours."
+            f"first and you hear nothing."
         ))
 
     # ----- Ads: name the advertisers in their home city ------------------
@@ -378,8 +379,7 @@ def _build_recommendations_top2(results):
             names = ", ".join(x["name"] for x in comps[:3])
             score = 75 + len(comps) * 3
             candidates.append((score,
-                f"<b>{names}</b> are paying Google to show their ad when families search for home care in {c}. Your ad was not there when we searched. Every click on a sponsored result is a family handing their "
-                f"inquiry to your competitor before they ever see your name."
+                f"<b>{names}</b> are paying Google to show their ad when families search for home care in {c}. Your ad was not there when we searched."
             ))
             break
 
@@ -394,8 +394,7 @@ def _build_recommendations_top2(results):
         score = 50 + len(not_ranking) * 5
         candidates.append((score,
             f"Families researching home care in {cities_str} scroll the regular Google "
-            f"results and your agency is not on the first page. Every researcher who never "
-            f"finds you is a family that hires one of the agencies that does show up."
+            f"results and your agency is not on the first page."
         ))
 
     # ----- Website: only the truly painful failures --------------------
@@ -404,8 +403,7 @@ def _build_recommendations_top2(results):
     if psi is not None and psi < 40:
         score = 70
         candidates.append((score,
-            f"Your homepage scores <b>{psi}/100</b> on mobile speed. Families on iPhones are left waiting on a page Google scores as slow, and a slow page loses them before it loads. Every bounce is an inquiry call you should have answered that you "
-            f"never will."
+            f"Your homepage scores <b>{psi}/100</b> on mobile speed. Families on iPhones are left waiting on a page Google scores as slow, and a slow page loses them before it loads."
         ))
     elif web_checks.get("google_reviews_widget") is False and rc >= 20:
         score = 45
@@ -604,7 +602,7 @@ def build_pdf(results):
 
     filtered_comps = [
         c for c in intel_comps
-        if c.get("name") and not _is_self(c.get("name", ""))
+        if c.get("name") and not measured.same_listing(c, (results.get("google_intel") or {}).get("target"), business)
     ]
     top_3_comps = sorted(
         filtered_comps,
@@ -710,7 +708,7 @@ def build_pdf(results):
             bits.append("PageSpeed: Couldn't check")
         bits.append("Team page: " + _web_answer(c.get("about_team_page"), "No"))
         bits.append("Blog (6mo): " + _web_answer(c.get("blog_recent"), "No"))
-        bits.append("Intake form: " + _web_answer(c.get("intake_form"), "No"))
+        bits.append("Intake form on homepage: " + _web_answer(c.get("intake_form"), "No"))
         bits.append("Schema: " + _web_answer(c.get("localbusiness_schema"), "No"))
         bits.append("Reviews widget: " + _web_answer(c.get("google_reviews_widget"), "No"))
         web_detail = "  |  ".join(bits)
@@ -799,6 +797,7 @@ def build_pdf(results):
     # Recommendations
     # Nothing measured to say: no section at all, never a sentence built on a failed search.
     recs = build_recommendations(results)
+    CTAFooterCanvas.gaps_measured = bool(recs)
     if recs:
         story.append(Paragraph("WHERE YOUR INQUIRY CALLS ARE GOING", h_section))
     for rec in recs:

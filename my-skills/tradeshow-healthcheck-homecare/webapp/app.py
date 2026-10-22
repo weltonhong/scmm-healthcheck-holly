@@ -505,7 +505,7 @@ if st.session_state.get("scan_done"):
                      if listing_confirm.known(tgt) else "**Target:** " + listing_confirm.reason(tgt))
             if comp:
                 st.write(
-                    f"**Top competitor:** {comp.get('name', '?')}: "
+                    f"**Most-reviewed nearby listing:** {comp.get('name', '?')}: "
                     f"{comp.get('review_count', 0)} reviews, "
                     f"{comp.get('rating', '-')} stars"
                 )
@@ -566,7 +566,7 @@ if st.session_state.get("scan_done"):
                     ("real_photos", "Real team photos"),
                     ("about_team_page", "About / Team page"),
                     ("blog_recent", "Recent blog (6 mo)"),
-                    ("intake_form", "Intake form"),
+                    ("intake_form", "Intake form on homepage"),
                     ("localbusiness_schema", "LocalBusiness schema"),
                     ("google_reviews_widget", "Google reviews widget"),
                 ]:

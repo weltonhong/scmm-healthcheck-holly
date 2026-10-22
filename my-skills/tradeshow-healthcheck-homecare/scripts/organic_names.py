@@ -91,6 +91,12 @@ def competitor_name(title, host, town=""):
     return None
 
 
+def _carries_their_name(name, prospect_name):
+    a = re.sub(r"[^a-z0-9]", "", (name or "").lower())
+    b = re.sub(r"[^a-z0-9]", "", (prospect_name or "").lower())
+    return bool(a and b) and (a in b or b in a)
+
+
 def top_names(results, prospect_site, prospect_name, k=3, skip=lambda r: False, town=""):
     """Up to k names, in page order: the prospect's own (properly written) and real competitors.
 
@@ -111,6 +117,10 @@ def top_names(results, prospect_site, prospect_name, k=3, skip=lambda r: False, 
             continue
         else:
             name = competitor_name(r.get("title"), host, town)
+            # No website to tell their own result apart: a result carrying their name is never printed as a
+            # rival (Welton 2026-10-21). Leaving a name out says less; printing them as their own rival is false.
+            if name and not prospect_site and _carries_their_name(name, prospect_name):
+                continue
         if name and name.lower() not in [n.lower() for n in out]:
             out.append(name)
             if len(out) >= k:

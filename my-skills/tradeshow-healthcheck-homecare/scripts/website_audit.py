@@ -142,7 +142,9 @@ def find_internal_link(html, base_url, url_keywords):
     """
     if not html or not base_url:
         return None
-    pattern = re.compile(r'<a[^>]+href="([^"]+)"', re.IGNORECASE)
+    # href="...", href='...' or href=... are all links (Welton 2026-10-21: a site whose links use single
+    # quotes read "No" for a team page, blog, pre-need form, obituary page, gallery or livestream it has).
+    pattern = re.compile(r"""<a[^>]+href\s*=\s*["']?([^"'\s>]+)""", re.IGNORECASE)
     for m in pattern.finditer(html):
         href = m.group(1).strip()
         if href.startswith(("mailto:", "tel:", "javascript:", "#")):
