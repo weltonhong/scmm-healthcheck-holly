@@ -32,6 +32,8 @@ drift apart.
 """
 from xml.sax.saxutils import escape
 
+import measured
+
 UNSCANNED = "UNSCANNED"
 NO_PACK = "NO_PACK"
 IN_PACK = "IN_PACK"
@@ -160,5 +162,7 @@ def measured_headline(results, searchers="Families"):
 
     off_page_one = [l for l in labels if organic_rank(seo.get(l)) == 0]
     if off_page_one and not all(_is_cremation(l) for l in off_page_one):
-        return "When %s search %s, you're not on page one of Google." % (who, _phrase(off_page_one, split))
+        # One look at one moment (Welton 2026-10-22): said as when we searched, not as where they stand.
+        return "When we searched %s %s, you weren't on page one of Google." % (
+            _phrase(off_page_one, split), measured.searched_when(results))
     return None

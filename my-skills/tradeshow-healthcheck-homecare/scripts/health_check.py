@@ -593,6 +593,7 @@ def check_seo_per_city(business, website, cities, state, own_cids=(), listings=(
         top_3 = organic_names.top_names(
             raw_results, website, business,
             skip=lambda r: not is_real_agency_result(r), town=city, listings=listings)
+        above = organic_names.above_names(raw_results, website, business, rank=match.get("rank"), listings=listings)
         sys.stdout.flush()
 
         raw_ads = match.get("ads") or []
@@ -611,6 +612,7 @@ def check_seo_per_city(business, website, cities, state, own_cids=(), listings=(
             "organic_error": match.get("organic_error"),
             "organic_maybe": match.get("organic_maybe"),
             "top_3": top_3,
+            "above": [] if match.get("organic_error") or match.get("organic_maybe") else above,
             "ads": raw_ads,
             "local_pack": match.get("local_pack") or {
                 "rank": None, "in_3_pack": False, "top_3": []
@@ -1101,6 +1103,8 @@ def run_health_check(business, cities, state, listing=None):
     # Parallel: SEO (per city, also yields 3-Pack via local_pack), Website, Reviews
     # Plain language on purpose: a prospect reads this over the rep's
     # shoulder, and "SEO+3-Pack" means nothing to them.
+    # When the searches ran, for "All searches run at ..." (scripts/measured.py, Welton 2026-10-22).
+    results["searched_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     print(
         f"Checking {_join_human(cities)}. Map results, search results, website and reviews.\n"
     )
@@ -1165,7 +1169,10 @@ def run_health_check(business, cities, state, listing=None):
 
     # Print SEO
     seo = results.get("seo", {})
-    seo_grade = grade_seo_multi(seo)
+    # Not graded (Welton 2026-10-22): organic rank moved five places in forty minutes on our own re-run, so a
+    # letter built on one look is not a grade. The map pack and reviews held still; the overall grade rests on
+    # those (and the website), never on organic rank.
+    seo_grade = None
     def trim_title(t):
         # Decode common HTML entities first
         t = (t or "").replace("&amp;", "&").replace("&#39;", "'") \
@@ -1194,10 +1201,8 @@ def run_health_check(business, cities, state, listing=None):
         # No names to list is not "no organic results" (Welton 2026-10-20): the page was read and the
         # rank stands; scripts/organic_names.py only names real businesses, so the list can be empty.
         top_3_part = f" (Top 3: {top_3_str})" if cleaned else ""
-        if rank is None:
-            seo_lines.append(f"{c}: Not in top 10{top_3_part}")
-        else:
-            seo_lines.append(f"{c}: Rank {rank}{top_3_part}")
+        seo_lines.append(f"{c}: " + measured.organic_row_text(d))
+    seo_lines.append(measured.searched_line(results))
     seo_lines.append(f"Grade: {measured.grade_text(seo_grade)}")
     print_section("GOOGLE ORGANIC RANKINGS (SEO):", seo_lines)
     results["seo_grade"] = seo_grade

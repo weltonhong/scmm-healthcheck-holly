@@ -264,3 +264,57 @@ def same_listing(candidate, target, business=""):
     if ca and ta:
         return ca == ta
     return bool(_norm(c.get("name"))) and _norm(c.get("name")) in (_norm(business), _norm(t.get("name")))
+
+
+# ------------------------------------------- when the searches ran (Welton 2026-10-22) ------
+# Organic rank moved five places in forty minutes on our own re-run (Haven, "medicare home health Ozark MO": Rank 1,
+# then 6), so a rank is what Google showed at one moment, not where a business stands. The sheet says that moment
+# once: "All searches run at 9:42 am on 22 October. Google reshuffles these results through the day." The time is
+# the searches' own start (results["searched_at"], UTC), shown in the same zone as the sheet's date (sheet_day).
+
+
+def _search_moment(results):
+    """(local datetime, zone name or "") of when the searches started; (None, "") when unknown."""
+    from zoneinfo import ZoneInfo
+    at = (results or {}).get("searched_at")
+    try:
+        t = datetime.datetime.fromisoformat(at) if at else None
+    except ValueError:
+        t = None
+    if t is None or t.tzinfo is None:
+        return None, ""
+    tz = (results or {}).get("browser_tz")
+    if tz:
+        try:
+            return t.astimezone(ZoneInfo(tz)), ""
+        except Exception:
+            pass
+    zone = STATE_ZONES.get(((results or {}).get("state") or "").strip().upper())
+    if zone:
+        return t.astimezone(ZoneInfo(zone)), ZONE_NAMES[zone]
+    return None, ""
+
+
+def searched_line(results):
+    """'All searches run at 9:42 am on 22 October. Google reshuffles these results through the day.'"""
+    t, zone = _search_moment(results)
+    if t is None:
+        return "Each search was run once. Google reshuffles these results through the day."
+    clock = t.strftime("%I:%M %p").lstrip("0").lower()
+    return "All searches run at %s%s on %d %s. Google reshuffles these results through the day." % (
+        clock, (" " + zone) if zone else "", t.day, t.strftime("%B"))
+
+
+def searched_when(results):
+    """'this morning', 'this afternoon', 'this evening', or 'today' when the time is unknown."""
+    t, _ = _search_moment(results)
+    if t is None:
+        return "today"
+    return "this morning" if t.hour < 12 else "this afternoon" if t.hour < 17 else "this evening"
+
+
+def organic_row_text(d):
+    """One organic row as printed: '#7' or 'not on page one', then who ranked above them (listing-backed)."""
+    above = [n for n in (d.get("above") or []) if n]
+    tail = " (ranked above you: %s)" % ", ".join(above) if above else ""
+    return ("#%d" % d["rank"] if d.get("rank") else "not on page one") + tail

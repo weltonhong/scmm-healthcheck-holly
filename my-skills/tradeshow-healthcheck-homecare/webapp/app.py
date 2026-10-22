@@ -96,6 +96,7 @@ import state_check  # noqa: E402
 import sheet_archive  # noqa: E402
 import listing_confirm  # noqa: E402
 import ads_words  # noqa: E402
+import measured  # noqa: E402  (organic rows and the search time, by attribute: reload-safe)
 if getattr(health_check, "_booth_code_version", None) != CODE_VERSION:
     for _name in _BOOTH_MODULES:
         if _name in sys.modules:
@@ -541,7 +542,8 @@ if st.session_state.get("scan_done"):
                 if d.get("error") or d.get("organic_error"):
                     st.write(f"**{c}:** " + ("Couldn\'t confirm: #%s is a page on their company\'s website" % d["organic_maybe"] if d.get("organic_maybe") and not d.get("error") else "Couldn\'t check this search"))
                     continue
-                st.write(f"**{c}:** {rank_txt}" + (f" (Top 3: {top3})" if d.get("top_3") else ""))
+                st.write(f"**{c}:** " + measured.organic_row_text(d))
+            st.caption(measured.searched_line(results))
 
         with st.expander("Website", expanded=False):
             web = results.get("website") or {}

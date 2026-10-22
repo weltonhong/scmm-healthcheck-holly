@@ -127,3 +127,30 @@ def top_names(results, prospect_site, prospect_name, k=3, skip=lambda r: False, 
             return []
         out.append(owners[0]["name"])
     return out
+
+
+def above_names(results, prospect_site, prospect_name, rank=None, listings=(), k=3):
+    """Businesses that ranked above the prospect on this page, in page order, each named by the Google listing whose
+    website the page is (Welton 2026-10-22: "telling a funeral home that Cichon-Borgosz, New Comer and Amigone came
+    up ahead of them is a better thing to say than a list that includes the prospect themselves").
+
+    Above means a position before theirs (`rank`), or anywhere on page one when they are not on it. A directory, a
+    news page, a page we cannot tie to exactly one listing, and any page that is or may be theirs are skipped: the
+    list names who it can prove, never the prospect, and says nothing about the pages it skipped.
+    """
+    out = []
+    for r in sorted((r for r in results or [] if r.get("position")), key=lambda r: r["position"]):
+        if r["position"] > 10 or (rank and r["position"] >= rank):
+            break
+        url = r.get("url") or re.sub(r"^https?://", "", r.get("domain") or "")
+        if prospect_site and measured.page_verdict(url, prospect_site) != measured.NOT_THEM:
+            continue
+        if not prospect_site and _carries_their_name(title_name(r.get("title")), prospect_name):
+            continue
+        owners = [lst for lst in listings or () if lst.get("website") and lst.get("name")
+                  and measured.page_verdict(url, lst["website"]) == measured.THEM]
+        if len(owners) == 1 and owners[0]["name"] not in out:
+            out.append(owners[0]["name"])
+            if len(out) >= k:
+                break
+    return out
