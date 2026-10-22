@@ -204,10 +204,21 @@ def check_real_photos(html):
 # ----------------------------- 2. PageSpeed Insights -----------------------------
 
 
+PSI_RUNS = 5          # Google's speed test runs per scan, all at once
+PSI_MIN_RUNS = 3      # fewer back than this is couldn't check
+
+
 def check_pagespeed(url, api_key, timeout=90):
-    """Returns dict with score (0-100) and pass (>=50). Retries once on failure
-    so a single transient timeout does not silently kill the check. pass=None
-    if both attempts fail. Errors are written to stderr so we can see them.
+    """Google's mobile speed test, run PSI_RUNS times at once (Welton 2026-10-22).
+
+    One run is not a measurement. Six fresh runs of one page within a minute scored 30 to 57 (Forest Lawn), 41 to 55
+    (Veritas) and 40 to 62 (Haven); the sheets had printed one run each (26, 37, 52), and Veritas's "slow page" bullet
+    fired on a page Google's own site scored 54. Each run gets its own address (a harmless rrm_psi tag): Google hands
+    back its cached answer for an address it tested moments ago, so five runs of one address are one run.
+
+    Returns the runs' low and high. score is the HIGH run and pass is high >= 50, so nothing calls a page slow unless
+    every run said so: the owner can run the test himself, and one good run of his disproves a slow claim built on a
+    bad run of ours. Fewer than PSI_MIN_RUNS runs back is couldn't check (score None), never a verdict.
     """
     if not api_key:
         sys.stderr.write("[pagespeed] no GOOGLE_API_KEY available\n")
@@ -215,46 +226,29 @@ def check_pagespeed(url, api_key, timeout=90):
     if not url:
         return {"score": None, "pass": None, "error": "no url"}
 
-    psi_url = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
-    params = {
-        "url": url,
-        "strategy": "mobile",
-        "category": "performance",
-        "key": api_key,
-    }
-
-    last_error = None
-    for attempt in (1, 2):
+    def one(n):
+        base, hash_, frag = url.partition("#")
+        tagged = base + ("&" if "?" in base else "?") + "rrm_psi=%d" % n + hash_ + frag
         try:
-            r = requests.get(psi_url, params=params, timeout=timeout)
+            r = requests.get("https://www.googleapis.com/pagespeedonline/v5/runPagespeed", timeout=timeout,
+                             params={"url": tagged, "strategy": "mobile", "category": "performance", "key": api_key})
             if r.status_code != 200:
-                last_error = f"HTTP {r.status_code}: {r.text[:160]}"
-                sys.stderr.write(
-                    f"[pagespeed] attempt {attempt} failed for {url}: {last_error}\n"
-                )
-                continue
-            data = r.json()
-            score = (
-                data.get("lighthouseResult", {})
-                .get("categories", {})
-                .get("performance", {})
-                .get("score")
-            )
-            if score is None:
-                last_error = "no score in response"
-                sys.stderr.write(
-                    f"[pagespeed] attempt {attempt} returned no score for {url}\n"
-                )
-                continue
-            score_pct = round(score * 100)
-            return {"score": score_pct, "pass": score_pct >= 50}
+                return None, "HTTP %s: %s" % (r.status_code, r.text[:160])
+            score = r.json().get("lighthouseResult", {}).get("categories", {}).get("performance", {}).get("score")
+            return (None, "no score in response") if score is None else (round(score * 100), None)
         except Exception as e:
-            last_error = str(e)[:200]
-            sys.stderr.write(
-                f"[pagespeed] attempt {attempt} exception for {url}: {last_error}\n"
-            )
+            return None, str(e)[:200]
 
-    return {"score": None, "pass": None, "error": last_error}
+    with ThreadPoolExecutor(max_workers=PSI_RUNS) as ex:
+        runs = list(ex.map(one, range(1, PSI_RUNS + 1)))
+    scores = sorted(s for s, _ in runs if s is not None)
+    errors = [e for _, e in runs if e]
+    for e in errors:
+        sys.stderr.write("[pagespeed] a run failed for %s: %s\n" % (url, e))
+    if len(scores) < PSI_MIN_RUNS:
+        return {"score": None, "pass": None, "scores": scores,
+                "error": "only %d of %d speed tests came back%s" % (len(scores), PSI_RUNS, (": " + errors[0]) if errors else "")}
+    return {"score": scores[-1], "low": scores[0], "high": scores[-1], "scores": scores, "pass": scores[-1] >= 50}
 
 
 # ----------------------------- 3. About/Team page -----------------------------
@@ -555,6 +549,9 @@ def audit(url):
         "status": status,
         "checks": checks,
         "pagespeed_score": psi.get("score"),
+        "pagespeed_low": psi.get("low"),
+        "pagespeed_high": psi.get("high"),
+        "pagespeed_runs": psi.get("scores"),
         "pagespeed_error": psi.get("error"),
         "blog_last_post": blog.get("last_post"),
         "blog_url": blog.get("blog_url"),

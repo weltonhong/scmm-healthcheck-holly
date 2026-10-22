@@ -318,3 +318,14 @@ def organic_row_text(d):
     above = [n for n in (d.get("above") or []) if n]
     tail = " (ranked above you: %s)" % ", ".join(above) if above else ""
     return ("#%d" % d["rank"] if d.get("rank") else "not on page one") + tail
+
+
+def speed_text(web):
+    """Google's mobile speed score as printed: the range across the scan's runs ("30 to 57"), or one number when they
+    agree (Welton 2026-10-22: one run swings about 25 points, so one number is a thing the owner can disprove).
+    A sheet scanned before the runs were kept carries one score; it prints as that score. None: not measured."""
+    low, high = web.get("pagespeed_low"), web.get("pagespeed_high")
+    if low is not None and high is not None:
+        return str(high) if low == high else "%d to %d" % (low, high)
+    s = web.get("pagespeed_score")
+    return None if s is None else str(s)
