@@ -117,13 +117,14 @@ def get_scrapingbee_key():
 # matcher.
 import name_matcher  # noqa: E402  (sibling module on sys.path)
 import map_identity  # noqa: E402  (which map card is the prospect)
+import measured  # noqa: E402  (a result is theirs only on their own website)
 
 
 STOPWORDS = {"&", "and", "the", "of", "inc", "llc", "co", "corp", "company"}
 
 
 def name_matches(text, business_name):
-    """SERP entry / ad name matcher. Symmetric — accepts either order."""
+    """SERP entry / ad name matcher. Symmetric: accepts either order."""
     return name_matcher.name_matches(text, business_name)
 
 
@@ -715,12 +716,9 @@ def organic_from_api(d, business_name, domain):
         host = _host(r.get("domain"))
         results.append({"position": pos, "title": title,
                         "url": url, "domain": host})
-        all_text = ("%s %s" % (title, url)).lower()
-        matched = False
-        if domain and domain in host:
-            matched = True
-        elif name_matches(all_text, business_name):
-            matched = True
+        # Theirs only when it is on their own website; a directory page that names them is somebody
+        # else's result (the pre-call rule of 2026-10-16, scripts/measured.py on_their_site).
+        matched = measured.on_their_site(url or host, domain)
         if matched and rank is None:
             rank = pos
     return rank, results
@@ -829,6 +827,8 @@ def run_google_api(business, domain, city, queries, api_key, own_cids=()):
                 "query": q,
                 "rank": rank,
                 "results": results,
+                # No website to compare: nothing on the page can be called theirs.
+                "organic_error": None if domain else "no website for the business to compare results with",
                 "ads": ads_from_api(d),
                 # An empty pack gets a second opinion before anything is
                 # said about it. See confirm_empty_pack.

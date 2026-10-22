@@ -22,7 +22,7 @@ Match path:
   3. Else rapidfuzz token_set_ratio >= 85 -> True.
   4. Single-token normalized matches require length >= 5 (e.g. "smith"
      alone is not enough to merge "Smith Cemetery" and "Smith Funeral
-     Home" — but "campbell" alone is enough to merge "Frank E. Campbell"
+     Home", but "campbell" alone is enough to merge "Frank E. Campbell"
      variants since the prospect side has multiple distinctive tokens).
 
 This matcher trades some precision for recall vs the previous
@@ -45,7 +45,7 @@ except ImportError:
     _HAS_RAPIDFUZZ = False
 
 
-# Suffix phrases stripped during normalization. Order matters — longer
+# Suffix phrases stripped during normalization. Order matters: longer
 # phrases strip first so "Memorial Park" reduces as one phrase, not as
 # "Memorial" then "Park" with a residual word in between.
 _SUFFIX_PHRASES_RAW = [

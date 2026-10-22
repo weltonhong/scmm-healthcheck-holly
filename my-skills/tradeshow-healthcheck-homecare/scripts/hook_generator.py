@@ -832,7 +832,7 @@ def _clean_title_segment(seg):
     # Strip trailing ellipsis / truncation markers that upstream SERP
     # clipping leaves behind: " ...", " and ...", " | ..."
     s = _re.sub(r"\s*(?:and\s+)?\.{2,}\s*$", "", s).strip()
-    s = _re.sub(r"\s*[\|\-–—]\s*\.{2,}\s*$", "", s).strip()
+    s = _re.sub(r"\s*[\|\-–\u2014]\s*\.{2,}\s*$", "", s).strip()
     # Phase 2.14: strip trailing address components AFTER suffix + ellipsis
     # cleanup so "Biz, 115 E 5th St, City, ST ..." gets the ellipsis
     # removed first, then the street+city+state tail.
@@ -887,7 +887,7 @@ def _extract_competitor_name(title, domain):
         # Split on common title separators. en/em dashes render differently;
         # match the Unicode ones as well as ASCII hyphen. `:` is only a
         # separator when spaced (so we don't split inline ratios like "4.5:5").
-        parts = _re.split(r"\s+\|\s+|\s+[\-–—]\s+|\s+:{1,2}\s+", title)
+        parts = _re.split(r"\s+\|\s+|\s+[\-–\u2014]\s+|\s+:{1,2}\s+", title)
         parts = [_clean_title_segment(p) for p in parts if p and p.strip()]
         for p in parts:
             if _is_generic_segment(p):

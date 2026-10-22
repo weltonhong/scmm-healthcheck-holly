@@ -45,7 +45,7 @@ def map_status(row):
         return UNSCANNED
     if row.get("in_3_pack"):
         return IN_PACK
-    if row.get("maybe_rank"):
+    if row.get("maybe_rank") or row.get("no_id"):
         # A card may be theirs but its place id did not confirm it
         # (scripts/map_identity.py): never a rank, never a miss.
         return UNCONFIRMED
@@ -57,7 +57,7 @@ def map_status(row):
 def organic_rank(row):
     """Rank 1-10 on page one, 0 when measured and not on page one, None when not measured."""
     row = row or {}
-    if row.get("error") or "rank" not in row:
+    if row.get("error") or row.get("organic_error") or "rank" not in row:
         return None
     r = row.get("rank")
     return r if isinstance(r, int) and 1 <= r <= 10 else 0

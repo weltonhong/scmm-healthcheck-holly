@@ -77,7 +77,7 @@ import importlib  # noqa: E402
 _INTEL_DIR = SCRIPTS_DIR.parents[1] / "quick-intel" / "scripts"
 _BOOTH_MODULES = ("name_matcher", "pack_identity", "map_identity", "hook_generator", "name_format",
                   "organic_names", "website_audit", "google_intel", "headline", "ads_words", "listing_confirm",
-                  "state_check", "sheet_archive", "health_check", "pdf_generator")
+                  "state_check", "sheet_archive", "measured", "health_check", "pdf_generator")
 
 
 def _code_version():
@@ -95,6 +95,7 @@ import pdf_generator  # noqa: E402
 import state_check  # noqa: E402
 import sheet_archive  # noqa: E402
 import listing_confirm  # noqa: E402
+import ads_words  # noqa: E402
 if getattr(health_check, "_booth_code_version", None) != CODE_VERSION:
     for _name in _BOOTH_MODULES:
         if _name in sys.modules:
@@ -460,7 +461,7 @@ if st.session_state.get("scan_done"):
             unsafe_allow_html=True,
         )
 
-        overall = results.get("overall_grade", "F")
+        overall = results.get("overall_grade") or "N/A"
         st.markdown(
             f"<div class='scmm-card'>"
             f"<div style='font-size:0.9rem;color:{SCMM_GRAY};text-transform:uppercase;letter-spacing:0.05em;'>Overall Grade</div>"
@@ -504,7 +505,7 @@ if st.session_state.get("scan_done"):
                      if listing_confirm.known(tgt) else "**Target:** " + listing_confirm.reason(tgt))
             if comp:
                 st.write(
-                    f"**Top competitor:** {comp.get('name', '?')} -- "
+                    f"**Top competitor:** {comp.get('name', '?')}: "
                     f"{comp.get('review_count', 0)} reviews, "
                     f"{comp.get('rating', '-')} stars"
                 )
@@ -515,7 +516,7 @@ if st.session_state.get("scan_done"):
         with st.expander("Google 3-Pack", expanded=False):
             pack = results.get("3pack") or {}
             for c, d in (pack.get("results") or {}).items():
-                top3 = ", ".join((d.get("top_3") or [])[:3]) or "—"
+                top3 = ", ".join((d.get("top_3") or [])[:3]) or "none named"
                 # Same three answers as the PDF (Welton, 2026-10-20): a failed search
                 # and an empty pack are never shown as "Not found".
                 if d.get("error"):
@@ -524,6 +525,8 @@ if st.session_state.get("scan_done"):
                     st.write(f"**{c}:** Found at rank {d.get('rank')} (Top 3: {top3})")
                 elif d.get("maybe_rank"):
                     st.write(f"**{c}:** Couldn't confirm: #{d.get('maybe_rank')} may be you (Top 3: {top3})")
+                elif d.get("no_id"):
+                    st.write(f"**{c}:** Couldn't confirm which card is theirs (Top 3: {top3})")
                 elif not [t for t in (d.get("top_3") or []) if t]:
                     st.write(f"**{c}:** " + ("Google shows no map pack for this search"
                              if d.get("confirmed_empty") else "Map results unconfirmed for this search"))
@@ -533,9 +536,9 @@ if st.session_state.get("scan_done"):
         with st.expander("Google SEO", expanded=False):
             for c, d in (results.get("seo") or {}).items():
                 rank = d.get("rank")
-                top3 = ", ".join((d.get("top_3") or [])[:3]) or "—"
+                top3 = ", ".join((d.get("top_3") or [])[:3]) or "none named"
                 rank_txt = f"Rank {rank}" if rank else "Not in top 10"
-                if d.get("error"):
+                if d.get("error") or d.get("organic_error"):
                     st.write(f"**{c}:** Couldn't check this search")
                     continue
                 st.write(f"**{c}:** {rank_txt}" + (f" (Top 3: {top3})" if d.get("top_3") else ""))
@@ -545,7 +548,7 @@ if st.session_state.get("scan_done"):
                 if d.get("error"):
                     st.write(f"**{c}:** Couldn't check this search")
                     continue
-                advs = ", ".join(d.get("all_advertisers") or []) or "No ads seen"
+                advs = ads_words.row_text(d.get("all_advertisers") or [], d.get("ads_unnamed") or 0)
                 st.write(f"**{c}:** {advs}")
                 if d.get("prospect_running_ads"):
                     st.write(f"&nbsp;&nbsp;↳ Prospect running ads in {c}")
@@ -553,7 +556,7 @@ if st.session_state.get("scan_done"):
         with st.expander("Website", expanded=False):
             web = results.get("website") or {}
             if web.get("unverified"):
-                st.write(web.get('unverified_reason') if str(web.get('unverified_reason', '')).startswith("Couldn't check") else f"Unable to verify -- {web.get('unverified_reason', 'blocked')}")
+                st.write(web.get('unverified_reason') if str(web.get('unverified_reason', '')).startswith("Couldn't check") else f"Couldn't check: {web.get('unverified_reason', 'blocked')}")
             else:
                 checks = web.get("checks") or {}
                 psi = web.get("pagespeed_score")
@@ -576,6 +579,12 @@ if st.session_state.get("scan_done"):
         pdf_bytes = st.session_state.get("pdf_bytes")
         if pdf_bytes is None:
             try:
+                # The date on the sheet is the rep's own day, from their browser (Welton 2026-10-21);
+                # scripts/measured.py sheet_day falls back to the prospect's state, never the server's UTC day.
+                try:
+                    results["browser_tz"] = st.context.timezone
+                except Exception:
+                    results["browser_tz"] = None
                 pdf_path = pdf_generator.build_pdf(results)
                 with open(pdf_path, "rb") as f:
                     pdf_bytes = f.read()

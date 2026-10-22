@@ -26,10 +26,11 @@ THE VERDICT, per card (the pre-call rule, pre-call-audit/scripts/pack_identity
              no listing id to compare, the names agree only loosely
   NOT_THEM   nothing on the card points at the prospect
 
-With no listing id to compare, the old full-name match still counts as THEM,
-as pre-call does when it has no phone or street. A CANT_TELL card is never a
-rank and never a miss: the map row reads "couldn't confirm (#N may be you)",
-leaves the grade, and is not named as a competitor.
+With no listing id to compare (no listing confirmed), a name alone never says THEM and never says
+NOT_THEM (Welton's standing ruling, 2026-10-21): judge_pack returns the row with no_id, the card the
+name points at as "may be you", and the row reads "Couldn't confirm". A CANT_TELL card is never a
+rank and never a miss: the map row reads "couldn't confirm (#N may be you)", leaves the grade, and
+is not named as a competitor.
 
 Name evidence is pre-call's own (pack_identity.py, copied byte for byte into
 this folder): the full-name rule (legacy_name_match) and a shared distinctive
@@ -110,6 +111,12 @@ def judge_pack(cards, business, own_cids):
     for n, _ in cards:
         if n not in names:
             names.append(n)
+    if not own:
+        # No confirmed listing id: a name alone never says found and never says not found (Welton's
+        # standing ruling, 2026-10-21: never identify a business by name alone). The row reads
+        # "Couldn't confirm"; a card the name points at keeps its position as "may be you".
+        return {"rank": None, "in_3_pack": False, "maybe_rank": rank or maybe, "no_id": True,
+                "top_3": names, "card_ids": [c for _, c in cards]}
     return {"rank": rank, "in_3_pack": rank is not None,
             "maybe_rank": None if rank is not None else maybe,
             "top_3": names, "card_ids": [c for _, c in cards]}
