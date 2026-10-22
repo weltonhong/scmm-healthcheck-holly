@@ -516,34 +516,22 @@ if st.session_state.get("scan_done"):
                     st.write(f"**Review gap:** {gap} reviews behind")
 
         with st.expander("Google 3-Pack", expanded=False):
-            pack = results.get("3pack") or {}
-            for c, d in (pack.get("results") or {}).items():
-                top3 = ", ".join((d.get("top_3") or [])[:3]) or "none named"
-                # Same three answers as the PDF (Welton, 2026-10-20): a failed search
-                # and an empty pack are never shown as "Not found".
-                if d.get("error"):
-                    st.write(f"**{c}:** Couldn't check this search")
-                elif d.get("in_3_pack"):
-                    st.write(f"**{c}:** Found at rank {d.get('rank')} (Top 3: {top3})")
-                elif d.get("maybe_rank"):
-                    st.write(f"**{c}:** Couldn't confirm: #{d.get('maybe_rank')} may be you (Top 3: {top3})")
-                elif d.get("no_id"):
-                    st.write(f"**{c}:** Couldn't confirm which card is theirs (Top 3: {top3})")
-                elif not [t for t in (d.get("top_3") or []) if t]:
-                    st.write(f"**{c}:** " + ("Google shows no map pack for this search"
-                             if d.get("confirmed_empty") else "Map results unconfirmed for this search"))
-                else:
-                    st.write(f"**{c}:** Not found (Top 3: {top3})")
+            # Both points named, the same lines as the PDF (measured.map_line, Welton 2026-10-22).
+            pack_rows = (results.get("3pack") or {}).get("results") or {}
+            for key, d in pack_rows.items():
+                st.write(f"**{key}:** " + measured.map_line(d, (d or {}).get("door"), measured.town_of(key)))
+            note = measured.office_note([(d or {}).get("door") for d in pack_rows.values()])
+            if note:
+                st.write(note)
 
         with st.expander("Google SEO", expanded=False):
-            for c, d in (results.get("seo") or {}).items():
-                rank = d.get("rank")
-                top3 = ", ".join((d.get("top_3") or [])[:3]) or "none named"
-                rank_txt = f"Rank {rank}" if rank else "Not in top 10"
-                if d.get("error") or d.get("organic_error"):
-                    st.write(f"**{c}:** " + ("Couldn\'t confirm: #%s is a page on their company\'s website" % d["organic_maybe"] if d.get("organic_maybe") and not d.get("error") else "Couldn\'t check this search"))
-                    continue
-                st.write(f"**{c}:** " + measured.organic_row_text(d))
+            # Page one or not, from both points, never a number (measured.organic_line, Welton 2026-10-22).
+            seo_rows = results.get("seo") or {}
+            for key, d in seo_rows.items():
+                st.write(f"**{key}:** " + measured.organic_line(d, (d or {}).get("door"), measured.town_of(key)))
+            note = measured.office_note([(d or {}).get("door") for d in seo_rows.values()])
+            if note:
+                st.write(note)
             st.caption(measured.searched_line(results))
 
         with st.expander("Google Ads", expanded=False):
@@ -556,7 +544,7 @@ if st.session_state.get("scan_done"):
             else:
                 checks = web.get("checks") or {}
                 psi = web.get("pagespeed_score")
-                psi_txt = f"{psi}/100" if psi is not None else "Unable to test"
+                psi_txt = f"{measured.speed_text(web)}/100" if psi is not None else "Unable to test"
                 st.write(f"- PageSpeed mobile: {psi_txt}")
                 for k, label in [
                     ("real_photos", "Real team photos"),

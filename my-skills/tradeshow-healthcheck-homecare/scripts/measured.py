@@ -31,6 +31,7 @@ apart, and proves the rule on a scan where every search and lookup fails, in all
 import datetime
 import re
 import urllib.parse
+from xml.sax.saxutils import escape
 
 POINTS = {"A": 4, "B": 3, "C": 2, "D": 1, "F": 0}
 LETTERS = {v: k for k, v in POINTS.items()}
@@ -329,3 +330,180 @@ def speed_text(web):
         return str(high) if low == high else "%d to %d" % (low, high)
     s = web.get("pagespeed_score")
     return None if s is None else str(s)
+
+
+# ------------------------------------------------ two points: their office and the town's center --
+# Welton 2026-10-22: the map is local. Measured on 33 searches, the same search from the prospect's own address and from
+# the town's center put them in a different map spot on 14 (receipt ops/receipts/20261022T111500_map-gap-measured.txt),
+# and the owner checks from his own desk. Every map and organic line names where it searched from; no map claim
+# without a stated point. Organic says page one or not, never a number (a rank moved up to seven places between points).
+
+NO_DOOR = "no confirmed address"     # the door row's error when the listing (and so its address) is not confirmed
+OFFICE = "your office"
+
+
+def door_point(target):
+    """(lat, lng) of the prospect's own listing, or None. Only a confirmed listing has an address to search from."""
+    loc = (target or {}).get("location") or {}
+    la, lo = loc.get("latitude"), loc.get("longitude")
+    return (la, lo) if la is not None and lo is not None else None
+
+
+def center(town):
+    return "the center of %s" % town
+
+
+def no_door(row):
+    return row is None or (row or {}).get("error") == NO_DOOR
+
+
+def map_point(row):
+    """("in" | "out" | "unconfirmed" | "nopack" | "unchecked", rank, top 3) for one point's map row."""
+    row = row or {}
+    if row.get("error"):
+        return "unchecked", None, []
+    top = [t for t in (row.get("top_3") or []) if t][:3]
+    if row.get("in_3_pack"):
+        return "in", row.get("rank"), top
+    if row.get("maybe_rank") or row.get("no_id"):
+        return "unconfirmed", row.get("maybe_rank"), top
+    if not top:
+        return "nopack", None, []
+    return "out", None, top
+
+
+def _map_phrase(row, where):
+    st, rank, _ = map_point(row)
+    if st == "in":
+        return "#%s searched from %s" % (rank, where)
+    if st == "out":
+        return "not in the top 3 searched from %s" % where
+    if st == "unconfirmed":
+        return ("couldn't confirm which card is yours (#%s may be you), searched from %s" % (rank, where) if rank
+                else "couldn't confirm which card is yours, searched from %s" % where)
+    if st == "nopack":
+        return ("Google showed no map, searched from %s" % where if (row or {}).get("confirmed_empty")
+                else "map results unconfirmed, searched from %s" % where)
+    return "couldn't check, searched from %s" % where
+
+
+def map_line(town_row, door_row, town):
+    """One map line naming both points (wording approved by Welton 2026-10-22)."""
+    c = center(town)
+    t_st, t_rank, t_top = map_point(town_row)
+    there = " (top 3 there: %s)" % ", ".join(t_top) if t_top and t_st != "in" else ""
+    if t_st == "unchecked" and (no_door(door_row) or map_point(door_row)[0] == "unchecked"):
+        return "couldn't check, searched from %s" % c + ("" if no_door(door_row) else " or from your office")
+    if no_door(door_row):
+        return _map_phrase(town_row, c) + there      # the office: office_note, once under the lines
+    d_st, d_rank, _ = map_point(door_row)
+    if d_st == "in" and t_st == "in":
+        return "#%s searched from your office, #%s searched from %s" % (d_rank, t_rank, c)
+    if d_st == "in" and t_st == "out":
+        return "#%s searched from your office; not in the top 3 searched from %s%s" % (d_rank, c, there)
+    if d_st == "out" and t_st == "in":
+        return "#%s searched from %s; not in the top 3 searched from your office" % (t_rank, c)
+    if d_st == "out" and t_st == "out":
+        return "not in the top 3, searched from your office or from %s (top 3 from the center: %s)" % (
+            c, ", ".join(t_top))
+    return "%s; %s%s" % (_map_phrase(door_row, OFFICE), _map_phrase(town_row, c), there)
+
+
+def page_one(row):
+    """True / False when the organic results were read, None when they could not say."""
+    if organic_failed(row) or (row or {}).get("organic_maybe"):
+        return None
+    r = (row or {}).get("rank")
+    return bool(r) and r <= 10
+
+
+def organic_line(town_row, door_row, town):
+    """One organic line: page one or not, from both points, never a number (Welton 2026-10-22)."""
+    c = center(town)
+    say = lambda v: "page one" if v else "not on page one"
+    t = page_one(town_row)
+    above = [n for n in ((town_row or {}).get("above") or []) if n] if t is not None else []
+    tail = " (ranked above you from the center: %s)" % ", ".join(above) if above else ""
+    if t is None and (no_door(door_row) or page_one(door_row) is None):
+        # Said once: neither point can give an answer.
+        why = organic_text(town_row)
+        return "%s, searched from %s%s" % ("Couldn't check" if why == "Couldn't check this search" else why, c,
+                                           "" if no_door(door_row) else " or from your office")
+    if no_door(door_row):
+        head = ("%s, searched from %s" % (say(t), c)) if t is not None else "%s, searched from %s" % (organic_text(town_row), c)
+        return head + tail                           # the office: office_note, once under the lines
+    d = page_one(door_row)
+    if t is None and d is None:
+        return "%s, searched from your office and from %s" % (organic_text(town_row), c)
+    if t is None:
+        return "%s searched from your office; %s, searched from %s" % (say(d), organic_text(town_row), c)
+    if d is None:
+        return "%s searched from %s%s; couldn't check from your office" % (say(t), c, tail)
+    if t == d:
+        return ("page one, searched from your office and from %s%s" % (c, tail) if t
+                else "not on page one, searched from your office or from %s%s" % (c, tail))
+    return "%s from your office, %s from %s%s" % (say(d), say(t), c, tail)
+
+
+def town_of(key):
+    """The town a search row was measured in: 'funeral home / Depew' -> 'Depew'; a town-keyed row is the town."""
+    return (key or "").split("/")[-1].strip()
+
+
+def _names(names):
+    names = ["<b>%s</b>" % escape(n) for n in names]
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def map_bullet(items, who="Families"):
+    """(score, text) for the map bullet, or None. items: (key, town row, office row, typed search) in sheet order.
+
+    Wording approved by Welton 2026-10-22, with his change: say who Google shows, never what a family then does
+    ("get those calls" was a claim nothing measured). Every sentence names the point it searched from.
+    """
+    picked, gaps = None, 0
+    for key, town_row, door_row, typed in items:
+        t_st, t_rank, t_top = map_point(town_row)
+        d_st, d_rank, d_top = (None, None, []) if no_door(door_row) else map_point(door_row)
+        q = "&quot;%s&quot;" % escape(typed)
+        c = center(escape(town_of(key)))
+        text = None
+        if t_st == "out" and d_st == "in":
+            text = ("%s searching %s from your own neighborhood see you at #%s. %s searching from %s don't see you in "
+                    "the top 3 on the map. Google shows %s instead." % (who, q, d_rank, who, c, _names(t_top)))
+        elif t_st == "out" and d_st == "out":
+            text = ("%s searching %s don't see you in the top 3 on the map, whether they search from your own "
+                    "neighborhood or from %s. Google shows %s instead." % (who, q, c, _names(t_top)))
+        elif t_st == "out":
+            text = ("%s searching %s from %s don't see you in the top 3 on the map. Google shows %s instead."
+                    % (who, q, c, _names(t_top)))
+        elif t_st == "in" and d_st == "out" and d_top:
+            text = ("%s searching %s from %s see you at #%s. Search it from your own office and you're not in the top "
+                    "3: Google shows %s to the people searching closest to you." % (who, q, c, t_rank, _names(d_top)))
+        if text:
+            gaps += 1
+            picked = picked or text
+    return (100 + gaps * 8, picked) if picked else None
+
+
+def organic_gaps(keys, seo):
+    """(keys not on page one, the points phrase) for the organic bullet, or ([], None).
+
+    A search counts only when it was read from the town's center and was not on page one there, and was not on page
+    one from their office either (or the office could not be searched). The phrase names the points actually measured.
+    """
+    out = [k for k in keys if page_one(seo.get(k)) is False and page_one((seo.get(k) or {}).get("door")) is not True]
+    if not out:
+        return [], None
+    towns = []
+    for k in out:
+        if town_of(k) not in towns:
+            towns.append(town_of(k))
+    where = center(escape(towns[0])) if len(towns) == 1 else "the center of each town"
+    both = all(page_one((seo.get(k) or {}).get("door")) is False for k in out)
+    return out, ("from your office and from %s" % where) if both else "from %s" % where
+
+
+def office_note(rows):
+    """One line under a section when the office could not be searched (no confirmed address): said once, not per line."""
+    return "From your office: couldn't check (no confirmed address)" if any(no_door(r) for r in rows) else None

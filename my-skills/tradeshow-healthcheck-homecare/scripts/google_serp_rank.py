@@ -654,7 +654,7 @@ def parse_organic_rank_from_html(html, business_name, domain):
 GOOGLE_API_URL = "https://app.scrapingbee.com/api/v1/google"
 
 
-def fetch_serp_google_api(query, city, api_key, timeout=120):
+def fetch_serp_google_api(query, city, api_key, timeout=120, latlng=None):
     """Fetch one SERP as structured JSON. Returns the parsed dict.
 
     Raises RuntimeError rather than returning a partial result, so the caller
@@ -666,7 +666,8 @@ def fetch_serp_google_api(query, city, api_key, timeout=120):
       2. No organic_results key at all. Structural failure, the JSON analogue
          of the URL-echo stub.
     """
-    coords = geocode_city_osm(city)
+    # latlng: search from that point (the prospect's own address, Welton 2026-10-22) instead of the town's centre.
+    coords = tuple(latlng) if latlng else geocode_city_osm(city)
     if not coords:
         raise RuntimeError(
             "geocode failed for %r; refusing to run an untargeted search "
@@ -795,6 +796,16 @@ def confirm_empty_pack(query, city, api_key, doc, business_name, own_cids=()):
     return lp, lp["pack_note"]
 
 
+def door_pack(doc, business_name, own_cids=()):
+    """The map pack searched from the prospect's own address. An empty pack there is not confirmed either way: the
+    second opinion (confirm_empty_pack) searches by town name, which is not this point (Welton 2026-10-22)."""
+    lp = local_pack_from_api(doc, business_name, own_cids)
+    if not lp.get("top_3"):
+        lp["confirmed_empty"] = False
+        lp["pack_note"] = "no second path from this point"
+    return lp
+
+
 def ads_from_api(d):
     """Mirror of parse_ads_from_html, against JSON. Top and bottom ad blocks."""
     out = []
@@ -810,7 +821,7 @@ def ads_from_api(d):
     return out
 
 
-def run_google_api(business, domain, city, queries, api_key, own_cids=()):
+def run_google_api(business, domain, city, queries, api_key, own_cids=(), latlng=None):
     out = {
         "business": business,
         "domain": domain,
@@ -821,7 +832,7 @@ def run_google_api(business, domain, city, queries, api_key, own_cids=()):
     }
     for q in queries:
         try:
-            d = fetch_serp_google_api(q, city, api_key)
+            d = fetch_serp_google_api(q, city, api_key, latlng=latlng)
             rank, results = organic_from_api(d, business, domain)
             out["queries"].append({
                 "query": q,
@@ -832,8 +843,8 @@ def run_google_api(business, domain, city, queries, api_key, own_cids=()):
                 "ads": ads_from_api(d),
                 # An empty pack gets a second opinion before anything is
                 # said about it. See confirm_empty_pack.
-                "local_pack": confirm_empty_pack(
-                    q, city, api_key, d, business, own_cids)[0],
+                "local_pack": (door_pack(d, business, own_cids) if latlng else confirm_empty_pack(
+                    q, city, api_key, d, business, own_cids)[0]),
                 # Google's own view of where it searched from. Recorded so a
                 # mis-targeted run is auditable after the fact.
                 "resolved_location": (d.get("meta_data") or {}).get("location"),
@@ -1069,8 +1080,14 @@ def run_playwright(business, domain, city, queries):
 # ----------------------------- entrypoint -----------------------------
 
 
-def run(business, domain, city, queries, own_cids=()):
+def run(business, domain, city, queries, own_cids=(), latlng=None):
     api_key = get_scrapingbee_key()
+    if latlng:
+        # From a given point only the coordinate search can be asked; the fallbacks search by town name, which would
+        # be a different point printed as this one. No key or a failure here is couldn't check, never a town answer.
+        if not api_key:
+            raise RuntimeError("no search key: cannot search from a given point")
+        return run_google_api(business, domain, city, queries, api_key, own_cids, latlng)
     if api_key:
         # /api/v1/google is the DOCUMENTED endpoint and the one that works.
         # custom_google (run_scrapingbee) broke 2026-08-17 and is no longer in
@@ -1094,13 +1111,16 @@ def main():
     parser.add_argument("--city", required=True, help="e.g. 'Tampa FL'")
     parser.add_argument("--queries", required=True,
                         help="Pipe-separated list of queries")
+    parser.add_argument("--latlng", default="",
+                        help="Search from this point ('lat,lng', the prospect's own address) instead of the town's centre")
     parser.add_argument("--cids", default="",
                         help="Comma-separated place ids (cid) of the prospect's own Google listing")
     args = parser.parse_args()
 
     queries = [q.strip() for q in args.queries.split("|") if q.strip()]
     result = run(args.business, args.domain, args.city, queries,
-                 [c for c in args.cids.split(",") if c.strip()])
+                 [c for c in args.cids.split(",") if c.strip()],
+                 tuple(float(x) for x in args.latlng.split(",")) if args.latlng.strip() else None)
     print(json.dumps(result, indent=2))
 
 

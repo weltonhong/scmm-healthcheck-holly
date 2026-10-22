@@ -483,6 +483,18 @@ def build_pack_from_seo(cities, seo_per_city):
             "confirmed_empty": bool(lp.get("confirmed_empty")),
             "pack_note": lp.get("pack_note"),
         }
+    for key, row in out["results"].items():
+        door = (seo_per_city.get(key) or {}).get("door")
+        if door is None or door.get("error") == measured.NO_DOOR:
+            row["door"] = {"error": measured.NO_DOOR}
+        elif door.get("error"):
+            row["door"] = {"rank": None, "in_3_pack": False, "top_3": [], "error": door["error"]}
+        else:
+            lp = door.get("local_pack") or {}
+            row["door"] = {"rank": lp.get("rank"), "in_3_pack": bool(lp.get("in_3_pack")),
+                           "top_3": lp.get("top_3") or [], "maybe_rank": lp.get("maybe_rank"),
+                           "no_id": lp.get("no_id"), "confirmed_empty": bool(lp.get("confirmed_empty")),
+                           "pack_note": lp.get("pack_note")}
     return out
 
 
@@ -513,7 +525,7 @@ def ddg_html_search(query):
     return results
 
 
-def check_seo_per_city(business, website, cities, state, own_cids=(), listings=()):
+def check_seo_per_city(business, website, cities, state, own_cids=(), listings=(), door=None):
     """For each city, run SERP rank script with one query 'home care {city} {state}'.
 
     Each city uses its own UULE so the result is geo-targeted to that city.
@@ -530,7 +542,7 @@ def check_seo_per_city(business, website, cities, state, own_cids=(), listings=(
 
     serp_script = SCRIPT_DIR / "google_serp_rank.py"
 
-    def run_one(city):
+    def run_one(city, latlng=None):
         query = f"home care {city} {state}"
         try:
             result = subprocess.run(
@@ -541,6 +553,7 @@ def check_seo_per_city(business, website, cities, state, own_cids=(), listings=(
                     "--city", f"{city} {state}",
                     "--queries", query,
                     "--cids", ",".join(own_cids),
+                    *(["--latlng", "%s,%s" % tuple(latlng)] if latlng else []),
                 ],
                 capture_output=True, text=True, timeout=120,
             )
@@ -620,6 +633,10 @@ def check_seo_per_city(business, website, cities, state, own_cids=(), listings=(
             },
         }
 
+    # The same searches from the prospect's own address, alongside (Welton 2026-10-22). Each row keeps its
+    # town-centre answer where every reader looks, and the office answer beside it as "door".
+    door_pool = ThreadPoolExecutor(max_workers=max(1, len(cities))) if door else None
+    door_futs = [door_pool.submit(run_one, k, door) for k in cities] if door else []
     out = {}
     with ThreadPoolExecutor(max_workers=max(1, len(cities))) as ex:
         futures = [ex.submit(run_one, c) for c in cities]
@@ -630,6 +647,14 @@ def check_seo_per_city(business, website, cities, state, own_cids=(), listings=(
             # the only sign the scan is alive now the debug noise is gone.
             print(f"  {city} ... done")
             sys.stdout.flush()
+    for f in door_futs:
+        key, data = f.result()
+        if key in out:
+            out[key]["door"] = data
+    if door_pool:
+        door_pool.shutdown()
+    for key in out:
+        out[key].setdefault("door", {"error": measured.NO_DOOR})
     return out
 
 
@@ -961,9 +986,12 @@ def grade_3pack_multi(pack):
                and (results.get(c) or {}).get("top_3")
                and not (results.get(c) or {}).get("maybe_rank")
                and not (results.get(c) or {}).get("no_id")]
-    total = len(scanned)
-    found = sum(1 for c in scanned if (results.get(c) or {}).get("in_3_pack"))
-    return grade_count_based(found, total)
+    # Both points count (Welton 2026-10-22): found from their office and missing from the town's center is one
+    # hit and one miss. The office rows pass the same test as the town rows.
+    rows = [results.get(k) or {} for k in scanned]
+    rows += [r for r in ((v or {}).get("door") for v in results.values())
+             if r and not r.get("error") and r.get("top_3") and not r.get("maybe_rank") and not r.get("no_id")]
+    return grade_count_based(sum(1 for r in rows if r.get("in_3_pack")), len(rows))
 
 
 def grade_seo_multi(seo_per_city):
@@ -1114,7 +1142,7 @@ def run_health_check(business, cities, state, listing=None):
     with ThreadPoolExecutor(max_workers=4) as ex:
         futures = {
             ex.submit(ads_records.check, website): "ads_records",
-            ex.submit(check_seo_per_city, business, website, cities, state, own_cids, intel.get("nearby_listings") or []): "seo",
+            ex.submit(check_seo_per_city, business, website, cities, state, own_cids, intel.get("nearby_listings") or [], measured.door_point(target) if known else None): "seo",
             ex.submit(check_website, website): "website",
             ex.submit(check_reviews_snapshot, business, home_city, state, intel): "reviews",
         }
@@ -1164,7 +1192,8 @@ def run_health_check(business, cities, state, listing=None):
         return f"{label:<{label_width}} NOT FOUND (Top 3: {top_3_str})"
 
     pack_grade = grade_3pack_multi(pack)
-    pack_lines = [fmt_pack_line(c) for c in cities]
+    pack_lines = [f"{c}: " + measured.map_line(pack_results.get(c), (pack_results.get(c) or {}).get("door"), measured.town_of(c)) for c in cities]
+    pack_lines += [n for n in [measured.office_note([(pack_results.get(k) or {}).get("door") for k in cities])] if n]
     pack_lines.append(f"Grade: {measured.grade_text(pack_grade)}")
     print_section("GOOGLE LOCAL MAP RANKINGS:", pack_lines)
     results["pack_grade"] = pack_grade
@@ -1195,7 +1224,7 @@ def run_health_check(business, cities, state, listing=None):
             # here tells a prospect they rank nowhere when nothing was measured,
             # the fabricated finding the 3-Pack row above already refuses.
             seo_lines.append(
-                f"{c}: " + measured.organic_text(d))
+                f"{c}: " + measured.organic_line(d, d.get("door"), measured.town_of(c)))
             # The row is decided. Without this the loop falls through and
             # appends a second, contradictory line for the same city.
             continue
@@ -1203,7 +1232,8 @@ def run_health_check(business, cities, state, listing=None):
         # No names to list is not "no organic results" (Welton 2026-10-20): the page was read and the
         # rank stands; scripts/organic_names.py only names real businesses, so the list can be empty.
         top_3_part = f" (Top 3: {top_3_str})" if cleaned else ""
-        seo_lines.append(f"{c}: " + measured.organic_row_text(d))
+        seo_lines.append(f"{c}: " + measured.organic_line(d, d.get("door"), measured.town_of(c)))
+    seo_lines += [n for n in [measured.office_note([(seo.get(k) or {}).get("door") for k in cities])] if n]
     seo_lines.append(measured.searched_line(results))
     seo_lines.append(f"Grade: {measured.grade_text(seo_grade)}")
     print_section("GOOGLE ORGANIC RANKINGS (SEO):", seo_lines)

@@ -131,6 +131,12 @@ def _distinct(names):
     return out
 
 
+def _where(labels, split):
+    """'the center of Depew', or 'the center of each town' (Welton 2026-10-22: no map claim without a stated point)."""
+    towns = _distinct([split(l)[1] for l in labels])
+    return "the center of %s" % escape(towns[0]) if len(towns) == 1 else "the center of each town"
+
+
 def measured_headline(results, searchers="Families"):
     """The headline text (reportlab markup), or None when nothing measured is a gap."""
     pack = (results.get("3pack") or {}).get("results") or {}
@@ -150,19 +156,28 @@ def measured_headline(results, searchers="Families"):
             on_map = [l for l in labels if not _is_cremation(l) and map_status(pack.get(l)) == IN_PACK]
             if not on_map:
                 return None
-            lines.append("You're on the Google map for %s." % _phrase(on_map, split, "and"))
-        lines.append("When %s search %s, you're not on the Google map." % (who, _phrase(off_map, split)))
+            lines.append("Searched from %s, you're on the Google map for %s." % (_where(on_map, split), _phrase(on_map, split, "and")))
+        # The town's center only (each row's town answer): the office answer lives on the lines below.
+        where = _where(off_map, split)
+        lines.append("%s searching %s from %s don't see you in the top 3 on the map." % (
+            searchers, _phrase(off_map, split), "the center of town" if where.startswith("the center of ") and
+            " each " not in where else where))
         first = off_map[0]
         rivals = [escape(n) for n in _distinct((pack.get(first) or {}).get("top_3") or [])[:2]]
         if rivals:
-            lines.append("%s %s the top map %s for %s." % (
-                _join(rivals), "holds" if len(rivals) == 1 else "hold",
-                "spot" if len(rivals) == 1 else "spots", _phrase([first], split)))
+            # The search word only when the sentence above names more than one search (else it repeats it).
+            kw = split(first)[0] if len(_distinct([split(l)[0] for l in off_map])) > 1 else None
+            lines.append("From %s, Google shows %s first%s." % (
+                _where([first], split), _join(rivals), " for &quot;%s&quot;" % escape(kw) if kw else ""))
         return " ".join(lines)
 
-    off_page_one = [l for l in labels if organic_rank(seo.get(l)) == 0]
+    # Not on page one from the town's center, and not from their office either (or the office was not searched).
+    off_page_one = [l for l in labels if organic_rank(seo.get(l)) == 0
+                    and measured.page_one((seo.get(l) or {}).get("door")) is not True]
     if off_page_one and not all(_is_cremation(l) for l in off_page_one):
         # One look at one moment (Welton 2026-10-22): said as when we searched, not as where they stand.
-        return "When we searched %s %s, you weren't on page one of Google." % (
-            _phrase(off_page_one, split), measured.searched_when(results))
+        office = all(measured.page_one((seo.get(l) or {}).get("door")) is False for l in off_page_one)
+        return "When we searched %s %s, from %s%s, you weren't on page one of Google." % (
+            _phrase(off_page_one, split), measured.searched_when(results),
+            "your office and from " if office else "", _where(off_page_one, split))
     return None
