@@ -536,7 +536,7 @@ def check_seo_per_city(business, website, cities, state, own_cids=()):
                 [
                     sys.executable, str(serp_script),
                     "--business", business,
-                    "--domain", biz_domain,
+                    "--domain", website or "",      # the whole listing website: a page on a company-wide site (W8)
                     "--city", f"{city} {state}",
                     "--queries", query,
                     "--cids", ",".join(own_cids),
@@ -609,6 +609,7 @@ def check_seo_per_city(business, website, cities, state, own_cids=()):
             "rank": match.get("rank"),
             # No website to compare: no result can be called theirs (scripts/measured.py).
             "organic_error": match.get("organic_error"),
+            "organic_maybe": match.get("organic_maybe"),
             "top_3": top_3,
             "ads": raw_ads,
             "local_pack": match.get("local_pack") or {
@@ -830,12 +831,18 @@ def build_ads_per_city(business, competitors, seo_per_city, prospect_website="")
         # deduped names) so we can compare each ad's display domain against
         # the prospect's actual website.
         prospect_match = None
+        prospect_site_maybe = None
+        # Theirs by its address (scripts/measured.py page_verdict, W8): their whole domain, or
+        # their own page on a company-wide site. Elsewhere on that site: could not confirm.
         if prospect_domain:
             for adv in ads_list:
-                ad_domain = normalize_domain((adv or {}).get("domain", ""))
-                if ad_domain and ad_domain == prospect_domain:
-                    prospect_match = (adv or {}).get("name", ad_domain)
+                v = measured.page_verdict((adv or {}).get("url") or (adv or {}).get("domain", ""),
+                                          prospect_website)
+                if v == measured.THEM:
+                    prospect_match = (adv or {}).get("name") or (adv or {}).get("domain", "")
                     break
+                if v == measured.CANT_TELL and prospect_site_maybe is None:
+                    prospect_site_maybe = (adv or {}).get("domain", "")
         # 2) Name-based fallback: many SERP scrapers fail to extract the
         # advertiser's display domain, leaving the domain field empty.
         # Without a name fallback the scorecard prints "Not running"
@@ -858,6 +865,9 @@ def build_ads_per_city(business, competitors, seo_per_city, prospect_website="")
         # Competitors keep the loose name matcher -- false positives there
         # are less harmful (the rep just sees similar competitors).
         comp_hits = [{"name": n} for n in comp_names]
+        prospect_maybe_site = bool(not prospect_match and not prospect_maybe and prospect_site_maybe)
+        if prospect_maybe_site:
+            prospect_maybe = prospect_site_maybe
 
         out[city] = {
             "prospect_running_ads": bool(prospect_match),
@@ -868,6 +878,7 @@ def build_ads_per_city(business, competitors, seo_per_city, prospect_website="")
             "competitors_running_ads": comp_hits,
             # No website: their ad cannot be recognized by its link (scripts/measured.py).
             "theirs_unknown": not prospect_domain,
+            "prospect_maybe_site": prospect_maybe_site,
             # Derived from the SAME per-city SERP record, so it inherits that
             # record's failure. Without this the ads row reads a failed fetch
             # as an empty ad block and prints "No ads detected" -- a finding
@@ -1167,7 +1178,7 @@ def run_health_check(business, cities, state, listing=None):
             # here tells a prospect they rank nowhere when nothing was measured,
             # the fabricated finding the 3-Pack row above already refuses.
             seo_lines.append(
-                f"{c}: Couldn't check this search")
+                f"{c}: " + measured.organic_text(d))
             # The row is decided. Without this the loop falls through and
             # appends a second, contradictory line for the same city.
             continue

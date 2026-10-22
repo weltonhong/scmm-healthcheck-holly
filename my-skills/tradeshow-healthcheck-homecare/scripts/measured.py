@@ -176,3 +176,66 @@ def sheet_date_text(results):
         return ""
     text = day.strftime("%B %d, %Y")
     return "%s (%s)" % (text, zone) if zone else text
+
+
+# ------------------------------------------- W8: a page on a company-wide website ------------
+# Welton, 2026-10-21: a prospect whose Google listing points at a page on a company-wide site
+# (Dignity Memorial, a franchise brand, a family firm's chapel pages) was credited with everything on
+# that domain: Dignity Memorial's corporate ad printed as "Frank E. Campbell: Their ad was seen", and
+# any other location's page counted as their rank. The pre-call rule of 10-16: a shared site is
+# "could not confirm", never yes or no. And "a business genuinely running its own ads on its own page
+# should still be credited": a result or ad on their own page (or under it) is theirs.
+# Which hosts are company-wide is measured, not guessed: shared_hosts.py (built from 28,260 real
+# listing websites by ops/build_shared_hosts.py). Any other host keeps the whole-domain rule.
+THEM, CANT_TELL, NOT_THEM = "them", "cant_tell", "not_them"
+
+
+def _url_path(u):
+    s = (u or "").strip()
+    if not s:
+        return ""
+    if "://" not in s:
+        s = "http://" + s
+    try:
+        return urllib.parse.urlparse(s).path.rstrip("/").lower()
+    except ValueError:
+        return ""
+
+
+def company_wide(their_site):
+    """Their website is a page on a host that several businesses' listings share."""
+    from shared_hosts import SHARED_HOSTS
+    h = _site(their_site)
+    return bool(_url_path(their_site)) and (h in SHARED_HOSTS or any(h.endswith("." + s) for s in SHARED_HOSTS))
+
+
+def page_verdict(url_or_host, their_site):
+    """THEM, CANT_TELL or NOT_THEM for one search result or ad, by its address."""
+    if not on_their_site(url_or_host, their_site):
+        return NOT_THEM
+    if not company_wide(their_site):
+        return THEM
+    mine, other = _url_path(their_site), _url_path(url_or_host)
+    if other == mine or other.startswith(mine + "/"):
+        return THEM
+    return CANT_TELL
+
+
+def organic_text(row):
+    """What an organic row says when it cannot give a rank."""
+    maybe = (row or {}).get("organic_maybe")
+    if maybe and not failed(row):
+        return "Couldn't confirm: #%s is a page on their company's website" % maybe
+    return "Couldn't check this search"
+
+
+def organic_unread(rank, results, their_site):
+    """{"organic_error", "organic_maybe"} for one search's organic results."""
+    if not _site(their_site):
+        return {"organic_error": "no website for the business to compare results with", "organic_maybe": None}
+    if rank:
+        return {"organic_error": None, "organic_maybe": None}
+    maybe = next((r.get("position") for r in results or []
+                  if page_verdict(r.get("url") or r.get("domain"), their_site) == CANT_TELL), None)
+    return {"organic_error": ("a page on their company's website ranks; could not confirm it is theirs"
+                              if maybe else None), "organic_maybe": maybe}

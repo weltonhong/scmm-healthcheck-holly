@@ -30,6 +30,7 @@ tradeshow-healthcheck-homecare/scripts/test_booth_organic_names.py fails if any 
 import re
 
 import hook_generator as hg
+import measured
 import name_format
 
 LEFTOVER_MAX = 3
@@ -104,7 +105,7 @@ def top_names(results, prospect_site, prospect_name, k=3, skip=lambda r: False, 
         host = re.sub(r"^https?://", "", (r.get("domain") or "")).split("/")[0]
         if not host:
             continue
-        if prospect_site and hg.same_site(host, re.sub(r"^https?://", "", prospect_site).split("/")[0]):
+        if prospect_site and measured.page_verdict(r.get("url") or host, prospect_site) == measured.THEM:
             name = name_format.for_prospect(prospect_name)
         elif skip(r):
             continue

@@ -77,7 +77,7 @@ import importlib  # noqa: E402
 _INTEL_DIR = SCRIPTS_DIR.parents[1] / "quick-intel" / "scripts"
 _BOOTH_MODULES = ("name_matcher", "pack_identity", "map_identity", "hook_generator", "name_format",
                   "organic_names", "website_audit", "google_intel", "headline", "ads_words", "listing_confirm",
-                  "state_check", "sheet_archive", "measured", "health_check", "pdf_generator")
+                  "state_check", "sheet_archive", "shared_hosts", "measured", "health_check", "pdf_generator")
 
 
 def _code_version():
@@ -539,7 +539,7 @@ if st.session_state.get("scan_done"):
                 top3 = ", ".join((d.get("top_3") or [])[:3]) or "none named"
                 rank_txt = f"Rank {rank}" if rank else "Not in top 10"
                 if d.get("error") or d.get("organic_error"):
-                    st.write(f"**{c}:** Couldn't check this search")
+                    st.write(f"**{c}:** " + ("Couldn\'t confirm: #%s is a page on their company\'s website" % d["organic_maybe"] if d.get("organic_maybe") and not d.get("error") else "Couldn\'t check this search"))
                     continue
                 st.write(f"**{c}:** {rank_txt}" + (f" (Top 3: {top3})" if d.get("top_3") else ""))
 

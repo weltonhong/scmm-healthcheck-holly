@@ -565,7 +565,7 @@ def parse_organic_rank_from_html(html, business_name, domain):
     Strategy: regex-extract <h3> headings (organic title text) and the
     surrounding link block. Skip 3-Pack / knowledge panel / PAA blocks.
     """
-    domain = (domain or "").lower().strip()
+    domain = measured._site(domain)      # the listing website may carry a page path (W8)
     results = []
 
     # Strip script/style for cleaner text
@@ -718,7 +718,7 @@ def organic_from_api(d, business_name, domain):
                         "url": url, "domain": host})
         # Theirs only when it is on their own website; a directory page that names them is somebody
         # else's result (the pre-call rule of 2026-10-16, scripts/measured.py on_their_site).
-        matched = measured.on_their_site(url or host, domain)
+        matched = measured.page_verdict(url or host, domain) == measured.THEM
         if matched and rank is None:
             rank = pos
     return rank, results
@@ -806,7 +806,7 @@ def ads_from_api(d):
             key = (name.lower(), dom)
             if (name or dom) and key not in seen:
                 seen.add(key)
-                out.append({"name": name, "domain": dom})
+                out.append({"name": name, "domain": dom, "url": a.get("url") or ""})
     return out
 
 
@@ -828,7 +828,7 @@ def run_google_api(business, domain, city, queries, api_key, own_cids=()):
                 "rank": rank,
                 "results": results,
                 # No website to compare: nothing on the page can be called theirs.
-                "organic_error": None if domain else "no website for the business to compare results with",
+                **measured.organic_unread(rank, results, domain),
                 "ads": ads_from_api(d),
                 # An empty pack gets a second opinion before anything is
                 # said about it. See confirm_empty_pack.

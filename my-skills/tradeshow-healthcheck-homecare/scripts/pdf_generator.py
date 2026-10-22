@@ -679,7 +679,7 @@ def build_pdf(results):
             # The prospect is handed this PDF. A failed fetch must not appear
             # on it as a finding about their rankings.
             seo_lines_html.append(
-                f"<b>{c}:</b> Couldn't check this search")
+                f"<b>{c}:</b> " + measured.organic_text(d))
             continue
         top_3_str = ", ".join(cleaned)
         # No names to list is not "no organic results" (Welton 2026-10-20): the page was read and the

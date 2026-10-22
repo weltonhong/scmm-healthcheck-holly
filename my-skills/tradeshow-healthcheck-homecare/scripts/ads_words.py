@@ -57,7 +57,8 @@ def advertisers(ads, competitors, business, their_site):
             continue
         seen.add(key)
         who = None
-        if their_site and measured.on_their_site(link, their_site):
+        # Their own page only: an ad elsewhere on a company-wide site is named by nobody (W8).
+        if their_site and measured.page_verdict(ad.get("url") or link, their_site) == measured.THEM:
             who = business
         else:
             owners = [(c.get("name") or "").strip() for c in (competitors or [])
@@ -103,6 +104,12 @@ def summary(ads_per_search, labels):
     if seen:
         return "Their ad was seen on %d of %s today" % (seen, _searches(n)) if n > 1 else \
             "Their ad was seen on this search today"
+    if maybe and all(r.get("prospect_maybe_site") for r in read
+                     if r.get("prospect_maybe_ad") and not r.get("prospect_running_ads")):
+        # W8: an ad on their company-wide website, not on their own page (Welton 2026-10-21).
+        return ("An ad from their company's website was seen on %d of %s today (could not confirm it is "
+                "this location's)" % (maybe, _searches(n))) if n > 1 else \
+            "An ad from their company's website was seen on this search today (could not confirm it is this location's)"
     if maybe:
         return ("An ad under their name was seen on %d of %s today (could not confirm it is theirs)"
                 % (maybe, _searches(n))) if n > 1 else \
