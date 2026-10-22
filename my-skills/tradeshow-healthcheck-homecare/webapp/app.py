@@ -406,7 +406,7 @@ if st.session_state.get("scan_started") and not st.session_state.get("scan_done"
         worker.start()
 
         log_lines = []
-        spinner_box.info("Scanning... reviews, 3-Pack, SEO, ads, website running in parallel.")
+        spinner_box.info("Scanning... reviews, 3-Pack, SEO, website running in parallel.")
 
         while True:
             try:
@@ -479,7 +479,7 @@ if st.session_state.get("scan_done"):
             "website": "Website",
         }
         rows_html = []
-        for key in ("reviews", "3pack", "seo", "ads", "website"):
+        for key in ("reviews", "3pack", "seo", "website"):
             g = grades.get(key)
             badge = (
                 f"<span class='grade-badge g-{g}'>{g}</span>"
@@ -542,16 +542,6 @@ if st.session_state.get("scan_done"):
                     st.write(f"**{c}:** " + ("Couldn\'t confirm: #%s is a page on their company\'s website" % d["organic_maybe"] if d.get("organic_maybe") and not d.get("error") else "Couldn\'t check this search"))
                     continue
                 st.write(f"**{c}:** {rank_txt}" + (f" (Top 3: {top3})" if d.get("top_3") else ""))
-
-        with st.expander("Google Ads", expanded=False):
-            for c, d in (results.get("ads") or {}).items():
-                if d.get("error"):
-                    st.write(f"**{c}:** Couldn't check this search")
-                    continue
-                advs = ads_words.row_text(d.get("all_advertisers") or [], d.get("ads_unnamed") or 0)
-                st.write(f"**{c}:** {advs}")
-                if d.get("prospect_running_ads"):
-                    st.write(f"&nbsp;&nbsp;↳ Prospect running ads in {c}")
 
         with st.expander("Website", expanded=False):
             web = results.get("website") or {}

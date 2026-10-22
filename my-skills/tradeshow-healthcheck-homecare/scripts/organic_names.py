@@ -97,32 +97,33 @@ def _carries_their_name(name, prospect_name):
     return bool(a and b) and (a in b or b in a)
 
 
-def top_names(results, prospect_site, prospect_name, k=3, skip=lambda r: False, town=""):
-    """Up to k names, in page order: the prospect's own (properly written) and real competitors.
+def top_names(results, prospect_site, prospect_name, k=3, skip=lambda r: False, town="", listings=()):
+    """Google's actual top three on page one, each named by the Google listing whose website it is (Welton 2026-10-22).
 
-    `results` are page-one rows {title, domain, position}; `skip(row)` is the tool's old directory hint;
-    `town` is the town searched.
+    "Top 3" means positions 1, 2 and 3 on the page, never the first three results we could put a name to: the Pacer
+    sheet printed "Rank 7 (Top 3: Pacer Funeral Home, Wendel & Loecher)" while Google's top three were Cichon-Borgosz,
+    New Comer and Amigone. A name comes only from a Google listing we read whose own website the page is on
+    (standing ruling 3: a name alone identifies nobody), so no page-title fragment ("Health Usnews") is ever printed
+    as a business. Nothing is printed, rather than a shorter or guessed list, when:
+      - the prospect is one of the three (the Top 3 never names them; the rank says where they are),
+      - a page in the top three is not one Google listing's own website (a directory, a news page, a business whose
+        listing we did not read, or two listings sharing the page),
+      - page one has fewer than three results.
+    `k`, `skip` and `town` are kept so callers do not change; a directory simply has no listing.
     """
+    top = sorted((r for r in results or [] if r.get("position") in (1, 2, 3)), key=lambda r: r["position"])
+    if [r["position"] for r in top] != [1, 2, 3]:
+        return []
     out = []
-    for r in results or []:
-        pos = r.get("position")
-        if pos is not None and pos > 10:
-            continue
-        host = re.sub(r"^https?://", "", (r.get("domain") or "")).split("/")[0]
-        if not host:
-            continue
-        if prospect_site and measured.page_verdict(r.get("url") or host, prospect_site) == measured.THEM:
-            name = name_format.for_prospect(prospect_name)
-        elif skip(r):
-            continue
-        else:
-            name = competitor_name(r.get("title"), host, town)
-            # No website to tell their own result apart: a result carrying their name is never printed as a
-            # rival (Welton 2026-10-21). Leaving a name out says less; printing them as their own rival is false.
-            if name and not prospect_site and _carries_their_name(name, prospect_name):
-                continue
-        if name and name.lower() not in [n.lower() for n in out]:
-            out.append(name)
-            if len(out) >= k:
-                break
+    for r in top:
+        url = r.get("url") or re.sub(r"^https?://", "", r.get("domain") or "")
+        if prospect_site and measured.page_verdict(url, prospect_site) != measured.NOT_THEM:
+            return []
+        if not prospect_site and _carries_their_name(title_name(r.get("title")), prospect_name):
+            return []
+        owners = [lst for lst in listings or () if lst.get("website") and lst.get("name")
+                  and measured.page_verdict(url, lst["website"]) == measured.THEM]
+        if len(owners) != 1:
+            return []
+        out.append(owners[0]["name"])
     return out

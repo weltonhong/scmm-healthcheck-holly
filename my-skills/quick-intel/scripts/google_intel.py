@@ -38,7 +38,14 @@ FIELD_MASK = (
     "places.googleMapsUri,"
     "places.websiteUri,"
     "places.primaryType,"
-    "places.types"
+    "places.types,"
+    # Who a listing is, beyond its name (standing ruling 3) and where it is (Welton 2026-10-22): the place id,
+    # its phone, its map position, and the place Google says it sits inside (the Great Mausoleum is inside
+    # Forest Lawn Glendale's own place).
+    "places.id,"
+    "places.nationalPhoneNumber,"
+    "places.location,"
+    "places.containingPlaces"
 )
 
 
@@ -211,6 +218,10 @@ def places_search(query, api_key, max_results=5):
             "website": place.get("websiteUri", ""),
             "primary_type": place.get("primaryType", ""),
             "types": place.get("types", []) or [],
+            "place_id": place.get("id", ""),
+            "phone": place.get("nationalPhoneNumber", ""),
+            "location": place.get("location") or {},
+            "inside": [c.get("id") for c in place.get("containingPlaces") or [] if c.get("id")],
         })
     return results
 
@@ -269,16 +280,39 @@ def _compact(s):
 
 
 def _same_place(a, b):
-    """Two Places results are the same listing: the same place id in the maps link, or the same address."""
+    """True when listing `a` is the business at listing `b`'s place, by evidence, never by name: the same place id,
+    one inside the other's place (Google's containingPlaces: the Great Mausoleum inside Forest Lawn), the same
+    phone, or the same street address (Welton 2026-10-22)."""
     def cid(u):
         m = re.search(r"[?&]cid=(\d+)", u or "")
         return m.group(1) if m else ""
     ca, cb = cid(a.get("maps_url")), cid(b.get("maps_url"))
-    if ca and cb:
-        return ca == cb
+    if ca and cb and ca == cb:
+        return True
+    pa, pb = a.get("place_id"), b.get("place_id")
+    if pa and pb and (pa == pb or pb in (a.get("inside") or []) or pa in (b.get("inside") or [])):
+        return True
+    da, db = re.sub(r"\D", "", a.get("phone") or "")[-10:], re.sub(r"\D", "", b.get("phone") or "")[-10:]
+    if len(da) == 10 and da == db:
+        return True
     na = " ".join(re.findall(r"[a-z0-9]+", (a.get("address") or "").lower()))
     nb = " ".join(re.findall(r"[a-z0-9]+", (b.get("address") or "").lower()))
     return bool(na) and na == nb
+
+
+NEARBY_MILES = 25
+
+
+def _miles(a, b):
+    """Great-circle miles between two Places locations, or None when either is missing."""
+    import math
+    la, lb = a.get("location") or {}, b.get("location") or {}
+    if la.get("latitude") is None or lb.get("latitude") is None:
+        return None
+    p1, p2 = math.radians(la["latitude"]), math.radians(lb["latitude"])
+    dp, dl = p2 - p1, math.radians(lb["longitude"] - la["longitude"])
+    h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 3958.8 * 2 * math.asin(math.sqrt(h))
 
 
 def is_same_business(target_name, candidate_name):
@@ -351,8 +385,18 @@ def main():
     # cemetery/hospital don't all count as separate competitors.
     competitors = []
     seen_normalized = set()
+    # NEARBY means measured on the map, never a shared word (Welton 2026-10-22: "Burd Home Health - Lake Ozark"
+    # came back for "home health Ozark MO" from about 100 miles away). Without their own listing's position no
+    # listing can be called nearby, so none is, and the lookup says why.
+    nearby, nearby_error = [], None
     if isinstance(competitor_results, list):
-        for c in competitor_results:
+        if not (isinstance(target, dict) and _miles(target, target) is not None):
+            nearby_error = "their own listing has no map position, so nearby cannot be measured"
+        else:
+            nearby = [c for c in competitor_results if not _same_place(c, target)
+                      and (_miles(c, target) or NEARBY_MILES + 1) <= NEARBY_MILES]
+    if isinstance(competitor_results, list):
+        for c in nearby:
             cname = c.get("name", "") or ""
             # The target itself, by its place (maps link) or street address, never by a shared name prefix:
             # "Smithfield" is not "Smith", "Guardian Angels" is not "Angels" (Welton 2026-10-21). The target is
@@ -384,7 +428,11 @@ def main():
         "query_target": target_query,
         "query_competitors": competitor_query,
         # The competitor lookup failed: "no competitors" would be a measured nothing (Welton 2026-10-21).
-        "competitors_error": competitor_results.get("error") if isinstance(competitor_results, dict) else None,
+        "competitors_error": (competitor_results.get("error") if isinstance(competitor_results, dict)
+                              else nearby_error),
+        # Every nearby listing the lookup read, any trade: the only names the booth sheet's organic Top 3 may print
+        # (my-skills/*/scripts/organic_names.py).
+        "nearby_listings": nearby,
     }
 
     print(json.dumps(output, indent=2))
