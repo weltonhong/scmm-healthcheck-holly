@@ -76,7 +76,7 @@ import importlib  # noqa: E402
 
 _INTEL_DIR = SCRIPTS_DIR.parents[1] / "quick-intel" / "scripts"
 _BOOTH_MODULES = ("name_matcher", "pack_identity", "map_identity", "hook_generator", "name_format",
-                  "organic_names", "website_audit", "google_intel", "headline", "ads_words", "listing_confirm",
+                  "organic_names", "website_audit", "google_intel", "headline", "ads_words", "ads_records", "listing_confirm",
                   "state_check", "sheet_archive", "shared_hosts", "measured", "health_check", "pdf_generator")
 
 
@@ -96,6 +96,7 @@ import state_check  # noqa: E402
 import sheet_archive  # noqa: E402
 import listing_confirm  # noqa: E402
 import ads_words  # noqa: E402
+import ads_records  # noqa: E402
 import measured  # noqa: E402  (organic rows and the search time, by attribute: reload-safe)
 if getattr(health_check, "_booth_code_version", None) != CODE_VERSION:
     for _name in _BOOTH_MODULES:
@@ -480,7 +481,7 @@ if st.session_state.get("scan_done"):
             "website": "Website",
         }
         rows_html = []
-        for key in ("reviews", "3pack", "seo", "website"):
+        for key in ("reviews", "3pack", "seo", "ads", "website"):
             g = grades.get(key)
             badge = (
                 f"<span class='grade-badge g-{g}'>{g}</span>"
@@ -544,6 +545,9 @@ if st.session_state.get("scan_done"):
                     continue
                 st.write(f"**{c}:** " + measured.organic_row_text(d))
             st.caption(measured.searched_line(results))
+
+        with st.expander("Google Ads", expanded=False):
+            st.write(ads_records.line(results.get("ads_records")))
 
         with st.expander("Website", expanded=False):
             web = results.get("website") or {}

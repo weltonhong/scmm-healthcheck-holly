@@ -51,6 +51,7 @@ import map_identity  # noqa: E402  (which map card is the prospect)
 import organic_names  # noqa: E402  (real names in the organic Top 3)
 import listing_confirm  # noqa: E402  (the rep confirms the business's own listing)
 import ads_words  # noqa: E402  (what the sheet may say about their ads)
+import ads_records  # noqa: E402  (Google's ad records for their website, Welton 2026-10-22)
 import measured  # noqa: E402  (nothing may rest on a failed search or lookup)
 import name_matcher  # noqa: E402
 
@@ -1110,8 +1111,9 @@ def run_health_check(business, cities, state, listing=None):
     )
     sys.stdout.flush()
 
-    with ThreadPoolExecutor(max_workers=3) as ex:
+    with ThreadPoolExecutor(max_workers=4) as ex:
         futures = {
+            ex.submit(ads_records.check, website): "ads_records",
             ex.submit(check_seo_per_city, business, website, cities, state, own_cids, intel.get("nearby_listings") or []): "seo",
             ex.submit(check_website, website): "website",
             ex.submit(check_reviews_snapshot, business, home_city, state, intel): "reviews",
@@ -1212,6 +1214,8 @@ def run_health_check(business, cities, state, listing=None):
     # summary, no live-log section, no "open lane", and no "couldn't check" in their place, until a source sees ads.
     ads_grade = None
     results["ads_grade"] = None
+    # What Google's ad records show for their website, not graded (scripts/ads_records.py, Welton 2026-10-22).
+    print_section("GOOGLE ADS:", [ads_records.line(results.get("ads_records"))])
 
     # Print Website
     web = results.get("website", {})
