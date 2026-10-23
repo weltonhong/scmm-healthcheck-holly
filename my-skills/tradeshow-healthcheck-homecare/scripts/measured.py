@@ -468,18 +468,21 @@ def map_bullet(items, who="Families"):
         q = "&quot;%s&quot;" % escape(typed)
         c = center(escape(town_of(key)))
         text = None
+        # The point searched is named, never widened (Welton 2026-10-22, the footer check): the office line is the
+        # listing's own pin, and half a mile away (OMNIACARE, Henderson) the map was different, so "from your own
+        # neighborhood" was not true. `who` is kept for callers and no longer printed.
         if t_st == "out" and d_st == "in":
-            text = ("%s searching %s from your own neighborhood see you at #%s. %s searching from %s don't see you in "
-                    "the top 3 on the map. Google shows %s instead." % (who, q, d_rank, who, c, _names(t_top)))
+            text = ("Searched from your office, Google shows you at #%s for %s. Searched from %s, you're not in the top "
+                    "3 on the map: Google shows %s instead." % (d_rank, q, c, _names(t_top)))
         elif t_st == "out" and d_st == "out":
-            text = ("%s searching %s don't see you in the top 3 on the map, whether they search from your own "
-                    "neighborhood or from %s. Google shows %s instead." % (who, q, c, _names(t_top)))
+            text = ("Searched from your office or from %s, you're not in the top 3 on the map for %s. From %s, Google "
+                    "shows %s instead." % (c, q, c, _names(t_top)))
         elif t_st == "out":
-            text = ("%s searching %s from %s don't see you in the top 3 on the map. Google shows %s instead."
-                    % (who, q, c, _names(t_top)))
+            text = ("Searched from %s, you're not in the top 3 on the map for %s. Google shows %s instead."
+                    % (c, q, _names(t_top)))
         elif t_st == "in" and d_st == "out" and d_top:
-            text = ("%s searching %s from %s see you at #%s. Search it from your own office and you're not in the top "
-                    "3: Google shows %s to the people searching closest to you." % (who, q, c, t_rank, _names(d_top)))
+            text = ("Searched from %s, Google shows you at #%s for %s. Searched from your office, you're not in the "
+                    "top 3: Google shows %s instead." % (c, t_rank, q, _names(d_top)))
         if text:
             gaps += 1
             picked = picked or text
