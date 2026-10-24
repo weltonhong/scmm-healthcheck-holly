@@ -284,15 +284,22 @@ def _search_moment(results):
         t = None
     if t is None or t.tzinfo is None:
         return None, ""
+    # The zone is always named (Welton 2026-10-24): Engram's sheet said "7:07 am" in the rep's Pacific time and a
+    # Virginia owner reads that as Eastern, three hours off. The rep's zone when it has a name we know, else the
+    # prospect's state's zone (its name), else the zone's own short name; never a time with no zone.
     tz = (results or {}).get("browser_tz")
-    if tz:
-        try:
-            return t.astimezone(ZoneInfo(tz)), ""
-        except Exception:
-            pass
+    if tz in ZONE_NAMES:
+        return t.astimezone(ZoneInfo(tz)), ZONE_NAMES[tz]
     zone = STATE_ZONES.get(((results or {}).get("state") or "").strip().upper())
     if zone:
         return t.astimezone(ZoneInfo(zone)), ZONE_NAMES[zone]
+    if tz:
+        try:
+            local = t.astimezone(ZoneInfo(tz))
+            if local.strftime("%Z"):
+                return local, local.strftime("%Z")
+        except Exception:
+            pass
     return None, ""
 
 
@@ -312,6 +319,24 @@ def searched_when(results):
     if t is None:
         return "today"
     return "this morning" if t.hour < 12 else "this afternoon" if t.hour < 17 else "this evening"
+
+
+# The search-results row is not graded (Welton 2026-10-22). A bare "N/A" beside rows that were read looked like
+# nothing was measured; Welton's words for it, 2026-10-24. Only where at least one row was read: with none read,
+# N/A is the honest answer and stays.
+SEO_NOT_GRADED = "Not graded: your position changes depending on where someone searches from."
+
+
+def seo_not_graded(results, grade=None):
+    """True when the search-results row has no grade AND at least one of its searches was read."""
+    rows = ((results or {}).get("seo") or {}).values()
+    return not grade and any(isinstance(r, dict) and not organic_failed(r) for r in rows)
+
+
+def reviews_word(n):
+    """'review' for exactly one, else 'reviews' (Welton 2026-10-24: Valley View's sheet said "1 reviews").
+    n may be an int, a digit string, None or '-'; only a count of one is singular."""
+    return "review" if str(n).strip() == "1" else "reviews"
 
 
 def organic_row_text(d):

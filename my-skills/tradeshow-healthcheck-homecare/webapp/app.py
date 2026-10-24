@@ -486,7 +486,8 @@ if st.session_state.get("scan_done"):
             badge = (
                 f"<span class='grade-badge g-{g}'>{g}</span>"
                 if g else
-                "<span style='color:#6C757D;font-style:italic;'>N/A</span>"
+                "<span style='color:#6C757D;font-style:italic;'>%s</span>" % (
+                    measured.SEO_NOT_GRADED if key == "seo" and measured.seo_not_graded(results, g) else "N/A")
             )
             rows_html.append(
                 f"<tr><td style='padding:0.5rem 0.9rem;border-bottom:1px solid #e6e6e6;'>{labels[key]}</td>"
@@ -503,17 +504,17 @@ if st.session_state.get("scan_done"):
         with st.expander("Reviews", expanded=False):
             tgt = (results.get("google_intel") or {}).get("target") or {}
             comp = results.get("top_competitor") or {}
-            st.write(f"**Target:** {tgt.get('review_count') or 0} reviews, {tgt.get('rating', '-')} stars"
+            st.write(f"**Target:** {tgt.get('review_count') or 0} {measured.reviews_word(tgt.get('review_count') or 0)}, {tgt.get('rating', '-')} stars"
                      if listing_confirm.known(tgt) else "**Target:** " + listing_confirm.reason(tgt))
             if comp:
                 st.write(
                     f"**Most-reviewed nearby listing:** {comp.get('name', '?')}: "
-                    f"{comp.get('review_count', 0)} reviews, "
+                    f"{comp.get('review_count', 0)} {measured.reviews_word(comp.get('review_count', 0))}, "
                     f"{comp.get('rating', '-')} stars"
                 )
                 gap = results.get("review_gap")
                 if gap:
-                    st.write(f"**Review gap:** {gap} reviews behind")
+                    st.write(f"**Review gap:** {gap} {measured.reviews_word(gap)} behind")
 
         with st.expander("Google 3-Pack", expanded=False):
             # Both points named, the same lines as the PDF (measured.map_line, Welton 2026-10-22).

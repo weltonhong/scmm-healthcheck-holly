@@ -164,11 +164,13 @@ def measured_headline(results, searchers="Families"):
             " each " not in where else where))
         first = off_map[0]
         rivals = [escape(n) for n in _distinct((pack.get(first) or {}).get("top_3") or [])[:2]]
-        if rivals:
-            # The search word only when the sentence above names more than one search (else it repeats it).
-            kw = split(first)[0] if len(_distinct([split(l)[0] for l in off_map])) > 1 else None
-            lines.append("From %s, Google shows %s first%s." % (
-                _where([first], split), _join(rivals), " for &quot;%s&quot;" % escape(kw) if kw else ""))
+        # Always name the search (Welton 2026-10-24). Left unnamed it was read as the headline's FIRST search: on
+        # Engram's sheet "Google shows Wright ... first" sat after a "funeral home" sentence, where Engram was #2 and
+        # Wright was not first; it was true only for "cremation". A search that cannot be named drops the sentence.
+        kw = split(first)[0]
+        if rivals and kw:
+            lines.append("From %s, Google shows %s first for &quot;%s&quot;." % (
+                _where([first], split), _join(rivals), escape(kw)))
         return " ".join(lines)
 
     # Not on page one from the town's center, and not from their office either (or the office was not searched).

@@ -358,8 +358,8 @@ def _build_recommendations_top2(results):
         comp_name = top.get("name", "your top competitor")
         score = min(99, (comp_rc - rc))
         candidates.append((score,
-            f"You have <b>{rc}</b> Google reviews. {comp_name} has <b>{comp_rc}</b>. When two "
-            f"agencies show up side by side and one has {comp_rc} reviews to your {rc}, families call them "
+            f"You have <b>{rc}</b> Google {measured.reviews_word(rc)}. {comp_name} has <b>{comp_rc}</b>. When two "
+            f"agencies show up side by side and one has {comp_rc} {measured.reviews_word(comp_rc)} to your {rc}, families call them "
             f"first and you hear nothing."
         ))
 
@@ -385,7 +385,7 @@ def _build_recommendations_top2(results):
     elif web_checks.get("google_reviews_widget") is False and rc >= 20:
         score = 45
         candidates.append((score,
-            f"Your <b>{rc}</b> Google reviews are nowhere on your homepage. The proof you "
+            f"Your <b>{rc}</b> Google {measured.reviews_word(rc)} {'is' if measured.reviews_word(rc) == 'review' else 'are'} nowhere on your homepage. The proof you "
             f"already earned is invisible to every family who lands there, so they bounce to "
             f"the agency whose reviews are right on the screen."
         ))
@@ -560,7 +560,7 @@ def build_pdf(results):
     rating = target.get("rating")
     maps_url = target.get("maps_url") or ""
     reviews_detail = (
-        f"<b>{rc if rc is not None else 0}</b> reviews, "
+        f"<b>{rc if rc is not None else 0}</b> {measured.reviews_word(rc if rc is not None else 0)}, "
         f"<b>{rating if rating is not None else '-'}</b> stars"
     ) if listing_confirm.known(target) else listing_confirm.reason(target)
     if maps_url:
@@ -595,10 +595,10 @@ def build_pdf(results):
             rating = c.get("rating")
             if rating is not None:
                 comp_strs.append(
-                    f"{name} ({count} reviews, {rating} stars)"
+                    f"{name} ({count} {measured.reviews_word(count)}, {rating} stars)"
                 )
             else:
-                comp_strs.append(f"{name} ({count} reviews)")
+                comp_strs.append(f"{name} ({count} {measured.reviews_word(count)})")
         reviews_detail += "<br/><b>Competitors:</b> " + ", ".join(comp_strs)
 
     pack_results = pack.get("results") or {}
@@ -665,6 +665,10 @@ def build_pdf(results):
         seo_lines_html.append(f"<b>{c}:</b> " + escape(measured.organic_line(d, d.get("door"), measured.town_of(c))))
     seo_lines_html += [n for n in [measured.office_note([(seo.get(k) or {}).get("door") for k in cities])] if n]
     seo_detail = "<br/>".join(seo_lines_html) if seo_lines_html else "No data"
+    # Beside rows that were read, the blank grade is explained in Welton's words (2026-10-24), never a bare N/A.
+    seo_not_graded = measured.seo_not_graded(results, grades.get("seo"))
+    if seo_not_graded:
+        seo_detail = '<font size="8"><i>%s</i></font><br/>%s' % (escape(measured.SEO_NOT_GRADED), seo_detail)
 
     if web.get("unverified"):
         reason = web.get("unverified_reason") or web.get("error") or "blocked"
@@ -711,7 +715,8 @@ def build_pdf(results):
         ["AREA", "GRADE", "DETAILS"],
         [area("Google Reviews"), grades.get("reviews") or "N/A", cell(reviews_detail)],
         [area("Google Local Map Rankings"), measured.grade_text(grades.get("3pack")), cell(pack_detail)],
-        [area("Google Organic Rankings (SEO)"), measured.grade_text(grades.get("seo")), cell(seo_detail)],
+        [area("Google Organic Rankings (SEO)"), "" if seo_not_graded else measured.grade_text(grades.get("seo")),
+         cell(seo_detail)],
         [area("Website"), web_grade_display, cell(web_detail)],
     ]
 
