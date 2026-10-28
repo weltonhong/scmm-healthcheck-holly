@@ -1090,7 +1090,10 @@ def run_health_check(business, cities, state, listing=None):
     # A listing we can stand behind; otherwise every number from it reads "Couldn't check"
     # (also when the lookup itself failed, which used to print "NOT FOUND" and a full gap).
     known = listing_confirm.known(target)
-    competitors = intel.get("competitors") or []
+    # Google marks their listing closed: said in Google's words, its reviews and map position not graded, and a
+    # rival Google marks closed is never named (scripts/measured.py, Welton 2026-10-28).
+    closed = measured.closed_word(target) if known else None
+    competitors = measured.open_rivals(intel.get("competitors") or [])
     # The prospect's own listing's place id: how map cards are matched to
     # them (scripts/map_identity.py, Welton 2026-10-20).
     own_cids = map_identity.own_cids(target, business)
@@ -1102,7 +1105,8 @@ def run_health_check(business, cities, state, listing=None):
         "GOOGLE REVIEWS:",
         [
             (f"{target_count} {measured.reviews_word(target_count)}, {target_rating if target_rating is not None else '-'} stars"
-             if known else listing_confirm.reason(target))
+             if known and not closed else measured.closed_log_reviews(target, closed) if closed
+             else listing_confirm.reason(target))
         ],
     )
 
@@ -1121,7 +1125,7 @@ def run_health_check(business, cities, state, listing=None):
             ],
         )
         results["top_competitor"] = top_comp
-        gap = ((top_comp.get("review_count") or 0) - target_count) if known else 0
+        gap = ((top_comp.get("review_count") or 0) - target_count) if known and not closed else 0
         if gap > 0:
             print_section(
                 "REVIEW GAP:",
@@ -1191,10 +1195,11 @@ def run_health_check(business, cities, state, listing=None):
             return f"{label:<{label_width}} Couldn't confirm which card is theirs (Top 3: {top_3_str})"
         return f"{label:<{label_width}} NOT FOUND (Top 3: {top_3_str})"
 
-    pack_grade = grade_3pack_multi(pack)
-    pack_lines = [f"{c}: " + measured.map_line(pack_results.get(c), (pack_results.get(c) or {}).get("door"), measured.town_of(c)) for c in cities]
+    pack_grade = None if closed else grade_3pack_multi(pack)
+    pack_lines = [f"{c}: " + (measured.closed_map_line(pack_results.get(c), (pack_results.get(c) or {}).get("door"), measured.town_of(c), closed) if closed else measured.map_line(pack_results.get(c), (pack_results.get(c) or {}).get("door"), measured.town_of(c))) for c in cities]
     pack_lines += [n for n in [measured.office_note([(pack_results.get(k) or {}).get("door") for k in cities])] if n]
-    pack_lines.append(f"Grade: {measured.grade_text(pack_grade)}")
+    pack_lines.append(measured.closed_log_map_grade(closed) if closed
+                      else f"Grade: {measured.grade_text(pack_grade)}")
     print_section("GOOGLE LOCAL MAP RANKINGS:", pack_lines)
     results["pack_grade"] = pack_grade
 
@@ -1297,7 +1302,8 @@ def run_health_check(business, cities, state, listing=None):
     rev_lines = [
         (f"Google:   {rev.get('google', {}).get('count', '-')} {measured.reviews_word(rev.get('google', {}).get('count', '-'))}, "
          f"{rev.get('google', {}).get('rating', '-')} stars")
-         if known else "Google:   " + listing_confirm.reason(target),
+         if known and not closed else "Google:   " + (measured.closed_log_reviews(target, closed) if closed
+                                                     else listing_confirm.reason(target)),
         "Facebook: " + _snapshot_line(rev.get("facebook"), "Page found", "No page turned up in our search"),
         "Yelp:     " + _snapshot_line(
             rev.get("yelp"), ("%s %s (page found)" % (rev["yelp"]["count"], measured.reviews_word(rev["yelp"]["count"]))) if (rev.get("yelp") or {}).get("count")
@@ -1307,7 +1313,7 @@ def run_health_check(business, cities, state, listing=None):
 
     # Reviews grade is relative to the top competitor when we have one.
     top_comp_reviews = (results.get("top_competitor") or {}).get("review_count") or 0
-    reviews_grade = grade_reviews(target_count, top_comp_reviews) if known else None
+    reviews_grade = grade_reviews(target_count, top_comp_reviews) if known and not closed else None
 
     # Overall grade
     grades = [
@@ -1317,7 +1323,8 @@ def run_health_check(business, cities, state, listing=None):
         web_grade,
         ads_grade,
     ]
-    overall = overall_grade(grades)
+    # Reviews and map are out for a closed listing, so no letter rests on what is left (standing ruling 18).
+    overall = None if closed else overall_grade(grades)
     results["overall_grade"] = overall
     results["all_grades"] = {
         "reviews": reviews_grade,
@@ -1330,7 +1337,7 @@ def run_health_check(business, cities, state, listing=None):
     elapsed = round(time.time() - started, 1)
     bar = "=" * 60
     print(bar)
-    print(f"OVERALL GRADE: {measured.grade_text(overall)}    (scan time: {elapsed}s)")
+    print(f"OVERALL GRADE: {measured.closed_overall(closed) if closed else measured.grade_text(overall)}    (scan time: {elapsed}s)")
     print(bar)
     print()
     sys.stdout.flush()

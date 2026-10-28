@@ -346,7 +346,8 @@ def _build_recommendations_top2(results):
     # it had no top_3, a single packless home city SUPPRESSED the whole
     # bullet -- and with it two genuine, nameable gaps in other cities.
     # Both points named; who Google shows, never what a family then does (Welton 2026-10-22).
-    mb = measured.map_bullet([(k, pack_results.get(k), (pack_results.get(k) or {}).get("door"),
+    # A listing Google marks closed has no map position to report (measured.listing_closed, Welton 2026-10-28).
+    mb = None if measured.listing_closed(results) else measured.map_bullet([(k, pack_results.get(k), (pack_results.get(k) or {}).get("door"),
                                (seo.get(k) or {}).get("query") or "home care %s" % k) for k in cities], 'Families')
     if mb:
         candidates.append(mb)
@@ -354,7 +355,7 @@ def _build_recommendations_top2(results):
     # ----- Reviews: name the competitor and the gap ---------------------
     rc = target.get("review_count") or 0
     comp_rc = top.get("review_count") or 0
-    if listing_confirm.known(target) and comp_rc > 0 and (comp_rc - rc) >= 15:
+    if listing_confirm.known(target) and not measured.listing_closed(results) and comp_rc > 0 and (comp_rc - rc) >= 15:
         comp_name = top.get("name", "your top competitor")
         score = min(99, (comp_rc - rc))
         candidates.append((score,
@@ -397,7 +398,7 @@ def _build_recommendations_top2(results):
 
     # A sentence about everything needs everything measured; otherwise nothing prints
     # (scripts/measured.py, Welton 2026-10-21).
-    if not measured.everything_read(results, cities, listing_confirm.known(target), website_needed=True):
+    if not measured.everything_read(results, cities, listing_confirm.known(target) and not measured.listing_closed(results), website_needed=True):
         return []
     return [
         "Your foundation is strong across reviews, local visibility, and your website. "
@@ -519,7 +520,7 @@ def build_pdf(results):
 
     # Overall grade banner - single full-width cell with label and letter
     # both centered on the page.
-    overall_color = GRADE_COLORS.get(overall, SCMM_GRAY)
+    overall_color = GRADE_COLORS.get(None if measured.listing_closed(results) else overall, SCMM_GRAY)
     banner_label_style = ParagraphStyle(
         "bannerLabel", parent=styles["Normal"],
         fontName="Helvetica-Bold", fontSize=12, textColor=colors.white,
@@ -530,10 +531,17 @@ def build_pdf(results):
         fontName="Helvetica-Bold", fontSize=36, textColor=colors.white,
         alignment=1, leading=38,
     )
+    # No letter for a listing Google marks closed: the sentence says why (Welton 2026-10-28).
+    banner_closed_style = ParagraphStyle(
+        "bannerClosed", parent=styles["Normal"],
+        fontName="Helvetica-Bold", fontSize=13, textColor=colors.white,
+        alignment=1, leading=16,
+    )
     overall_table = Table(
         [[[
             Paragraph("OVERALL GRADE", banner_label_style),
-            Paragraph(overall, banner_letter_style),
+            Paragraph(overall, banner_letter_style) if not measured.listing_closed(results) else Paragraph(
+                escape(measured.closed_overall(measured.listing_closed(results))), banner_closed_style),
         ]]],
         colWidths=[7.0 * inch],
     )
@@ -556,13 +564,17 @@ def build_pdf(results):
     ads = results.get("ads") or {}
     cities = results.get("cities") or [city]
 
+    # Google marks their listing closed: said in Google's words, reviews and map not graded (Welton 2026-10-28).
+    closed_listing = measured.listing_closed(results)
     rc = target.get("review_count")
     rating = target.get("rating")
     maps_url = target.get("maps_url") or ""
     reviews_detail = (
         f"<b>{rc if rc is not None else 0}</b> {measured.reviews_word(rc if rc is not None else 0)}, "
         f"<b>{rating if rating is not None else '-'}</b> stars"
-    ) if listing_confirm.known(target) else listing_confirm.reason(target)
+    ) if listing_confirm.known(target) and not closed_listing else (
+        escape(measured.closed_reviews_detail(target, closed_listing)) if closed_listing
+        else listing_confirm.reason(target))
     if maps_url:
         reviews_detail += (
             f'  <a href="{maps_url}" color="#29ABE2">'
@@ -570,7 +582,7 @@ def build_pdf(results):
         )
 
     # Show top 3 competitors with review counts, not just top 1.
-    intel_comps = (results.get("google_intel") or {}).get("competitors") or []
+    intel_comps = measured.open_rivals((results.get("google_intel") or {}).get("competitors"))
 
     def _is_self(name):
         if not name or not business:
@@ -629,7 +641,7 @@ def build_pdf(results):
         return f"NOT FOUND (Top 3: {top_3_str})"
 
     pack_lines_html = [
-        f"<b>{c}:</b> " + escape(measured.map_line(pack_results.get(c), (pack_results.get(c) or {}).get("door"), measured.town_of(c))) for c in cities
+        f"<b>{c}:</b> " + escape(measured.closed_map_line(pack_results.get(c), (pack_results.get(c) or {}).get("door"), measured.town_of(c), closed_listing) if closed_listing else measured.map_line(pack_results.get(c), (pack_results.get(c) or {}).get("door"), measured.town_of(c))) for c in cities
     ]
     pack_lines_html += [n for n in [measured.office_note([(pack_results.get(k) or {}).get("door") for k in cities])] if n]
     pack_detail = "<br/>".join(pack_lines_html)
@@ -711,10 +723,14 @@ def build_pdf(results):
     def area(text):
         return Paragraph(text, area_style)
 
+    if closed_listing:
+        note = '<font size="8"><i>%s</i></font><br/>' % escape(measured.closed_not_graded(closed_listing))
+        reviews_detail, pack_detail = note + reviews_detail, note + pack_detail
     rows = [
         ["AREA", "GRADE", "DETAILS"],
-        [area("Google Reviews"), grades.get("reviews") or "N/A", cell(reviews_detail)],
-        [area("Google Local Map Rankings"), measured.grade_text(grades.get("3pack")), cell(pack_detail)],
+        [area("Google Reviews"), "" if closed_listing else grades.get("reviews") or "N/A", cell(reviews_detail)],
+        [area("Google Local Map Rankings"), "" if closed_listing else measured.grade_text(grades.get("3pack")),
+         cell(pack_detail)],
         [area("Google Organic Rankings (SEO)"), "" if seo_not_graded else measured.grade_text(grades.get("seo")),
          cell(seo_detail)],
         [area("Website"), web_grade_display, cell(web_detail)],

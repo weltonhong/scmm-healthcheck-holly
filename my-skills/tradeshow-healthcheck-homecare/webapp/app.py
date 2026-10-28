@@ -342,6 +342,8 @@ def _listing_answer(values):
             st.markdown("### Is this your address?")
             st.markdown("**%s**" % found[0].get("address", ""))
             st.caption("Google lists %s there." % found[0].get("name", values["business"]))
+            if measured.closed_word(found[0]):   # Google's own flag, in Google's words (Welton 2026-10-28)
+                st.markdown("**%s**" % measured.closed_confirm(measured.closed_word(found[0])))
             yes, no = st.columns(2)
             if yes.button("Yes", key="listing_pick_0", type="primary", use_container_width=True):
                 picked = found[0]
@@ -350,7 +352,9 @@ def _listing_answer(values):
         else:
             st.markdown("### Which one is your address?")
             for i, l in enumerate(found):
-                if st.button(l.get("address", ""), key="listing_pick_%d" % i, use_container_width=True):
+                closed = measured.closed_word(l)
+                label = l.get("address", "") + (" (%s)" % measured.closed_confirm(closed)[:-1] if closed else "")
+                if st.button(label, key="listing_pick_%d" % i, use_container_width=True):
                     picked = l
             if st.button("None of these", key="listing_none", use_container_width=True):
                 picked = listing_confirm.not_confirmed(listing_confirm.SAID_NO)
@@ -464,10 +468,13 @@ if st.session_state.get("scan_done"):
         )
 
         overall = results.get("overall_grade") or "N/A"
+        closed = measured.listing_closed(results)   # no letter for a listing Google marks closed
+        if closed:
+            overall = measured.closed_overall(closed)
         st.markdown(
             f"<div class='scmm-card'>"
             f"<div style='font-size:0.9rem;color:{SCMM_GRAY};text-transform:uppercase;letter-spacing:0.05em;'>Overall Grade</div>"
-            f"<div style='font-size:3rem;font-weight:800;color:{SCMM_DARK};line-height:1;'>{overall}</div>"
+            f"<div style='font-size:{'1.2rem' if closed else '3rem'};font-weight:800;color:{SCMM_DARK};line-height:{'1.2' if closed else '1'};'>{overall}</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -487,7 +494,9 @@ if st.session_state.get("scan_done"):
                 f"<span class='grade-badge g-{g}'>{g}</span>"
                 if g else
                 "<span style='color:#6C757D;font-style:italic;'>%s</span>" % (
-                    measured.SEO_NOT_GRADED if key == "seo" and measured.seo_not_graded(results, g) else "N/A")
+                    measured.closed_not_graded(measured.listing_closed(results))
+                    if key in ("reviews", "3pack") and measured.listing_closed(results)
+                    else measured.SEO_NOT_GRADED if key == "seo" and measured.seo_not_graded(results, g) else "N/A")
             )
             rows_html.append(
                 f"<tr><td style='padding:0.5rem 0.9rem;border-bottom:1px solid #e6e6e6;'>{labels[key]}</td>"
@@ -505,7 +514,9 @@ if st.session_state.get("scan_done"):
             tgt = (results.get("google_intel") or {}).get("target") or {}
             comp = results.get("top_competitor") or {}
             st.write(f"**Target:** {tgt.get('review_count') or 0} {measured.reviews_word(tgt.get('review_count') or 0)}, {tgt.get('rating', '-')} stars"
-                     if listing_confirm.known(tgt) else "**Target:** " + listing_confirm.reason(tgt))
+                     if listing_confirm.known(tgt) and not measured.closed_word(tgt) else "**Target:** " + (
+                         measured.closed_reviews_detail(tgt, measured.closed_word(tgt)) if measured.closed_word(tgt)
+                         else listing_confirm.reason(tgt)))
             if comp:
                 st.write(
                     f"**Most-reviewed nearby listing:** {comp.get('name', '?')}: "
@@ -520,7 +531,9 @@ if st.session_state.get("scan_done"):
             # Both points named, the same lines as the PDF (measured.map_line, Welton 2026-10-22).
             pack_rows = (results.get("3pack") or {}).get("results") or {}
             for key, d in pack_rows.items():
-                st.write(f"**{key}:** " + measured.map_line(d, (d or {}).get("door"), measured.town_of(key)))
+                closed = measured.listing_closed(results)
+                st.write(f"**{key}:** " + (measured.closed_map_line(d, (d or {}).get("door"), measured.town_of(key), closed)
+                                           if closed else measured.map_line(d, (d or {}).get("door"), measured.town_of(key))))
             note = measured.office_note([(d or {}).get("door") for d in pack_rows.values()])
             if note:
                 st.write(note)

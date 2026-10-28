@@ -535,3 +535,87 @@ def organic_gaps(keys, seo):
 def office_note(rows):
     """One line under a section when the office could not be searched (no confirmed address): said once, not per line."""
     return "From your office: couldn't check (no confirmed address)" if any(no_door(r) for r in rows) else None
+
+
+# --------------------------------- a listing Google marks closed (Welton 2026-10-28, booth item 8) --
+# Google's own businessStatus comes back on every Places lookup (google_intel.places_search keeps it as "status").
+# When the prospect's confirmed listing is marked closed, the sheet says what Google shows, in Google's words, and does
+# not grade that listing's reviews or map position; with those two out, no overall letter either (standing ruling 18).
+# It says what Google shows, never what it means: for a cemetery a closed listing means the office or operator changed,
+# never that the grounds closed (standing ruling 20). A rival Google marks closed is never named as one (open_rivals).
+# Wording approved by Welton 2026-10-28, "temporarily closed" the same way with the word changed.
+
+CLOSED_WORDS = {"CLOSED_PERMANENTLY": "permanently closed", "CLOSED_TEMPORARILY": "temporarily closed"}
+
+
+def closed_word(place):
+    """"permanently closed" / "temporarily closed" when Google's businessStatus says so; None otherwise (open, or not read)."""
+    p = place or {}
+    if not isinstance(p, dict) or p.get("error"):
+        return None
+    return CLOSED_WORDS.get(p.get("status") or "")
+
+
+def listing_closed(results):
+    """The closed word for the prospect's own listing in a scan's results, or None."""
+    return closed_word(((results or {}).get("google_intel") or {}).get("target"))
+
+
+def open_rivals(places):
+    """The rivals Google does not mark closed: a closed listing is never named as a rival."""
+    return [p for p in (places or []) if not closed_word(p)]
+
+
+def closed_not_graded(word):
+    """The note beside a blank grade (reviews, map)."""
+    return "Not graded: Google shows this listing as %s." % word
+
+
+def closed_overall(word):
+    """Where the overall letter would be."""
+    return "Not graded: Google shows your listing as %s." % word
+
+
+def closed_confirm(word):
+    """The rep's line at "Is this your address?"."""
+    return "Google shows this listing as %s." % word
+
+
+def _stars(rating):
+    try:
+        return "%.1f" % float(rating)
+    except (TypeError, ValueError):
+        return "-"
+
+
+def closed_reviews_detail(target, word):
+    """The sheet's reviews line: what Google shows, and what that listing shows, ungraded."""
+    t = target or {}
+    street = (t.get("address") or "").split(",")[0].strip()
+    n = t.get("review_count") or 0
+    return "Google shows your listing%s as %s. That listing shows %s %s, %s stars." % (
+        " at %s" % street if street else "", word, n, reviews_word(n), _stars(t.get("rating")))
+
+
+def closed_log_reviews(target, word):
+    """The rep's live log, GOOGLE REVIEWS."""
+    t = target or {}
+    n = t.get("review_count") or 0
+    return "%s %s, %s stars. %s Not graded." % (n, reviews_word(n), _stars(t.get("rating")), closed_confirm(word))
+
+
+def closed_log_map_grade(word):
+    """The rep's live log, the map section's grade line."""
+    return "Grade: not graded (Google shows their listing as %s)" % word
+
+
+def closed_map_line(town_row, door_row, town, word):
+    """One map line for a closed listing: who Google showed, from each point searched (every map line names its point,
+    Welton 2026-10-22), and no position for their listing."""
+    parts = []
+    for row, where in ((None if no_door(door_row) else door_row, OFFICE), (town_row, center(town))):
+        if row is not None:
+            top = map_point(row)[2]
+            parts.append("top 3 searched from %s: %s" % (where, ", ".join(top)) if top else _map_phrase(row, where))
+    head = "; ".join(parts)
+    return "%s. Your listing: Google shows it as %s." % (head[:1].upper() + head[1:], word)

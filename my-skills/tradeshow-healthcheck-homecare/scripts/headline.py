@@ -148,7 +148,8 @@ def measured_headline(results, searchers="Families"):
     def split(label):
         return keyword_and_town(label, seo.get(label), state)
 
-    off_map = [l for l in labels if map_status(pack.get(l)) == ABSENT_FROM_PACK]
+    # A listing Google marks closed has no map position to report (Welton 2026-10-28): no map sentence about them.
+    off_map = [] if measured.listing_closed(results) else [l for l in labels if map_status(pack.get(l)) == ABSENT_FROM_PACK]
     if off_map:
         lines = []
         if all(_is_cremation(l) for l in off_map):
