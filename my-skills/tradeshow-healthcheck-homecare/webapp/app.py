@@ -76,7 +76,7 @@ import importlib  # noqa: E402
 
 _INTEL_DIR = SCRIPTS_DIR.parents[1] / "quick-intel" / "scripts"
 _BOOTH_MODULES = ("name_matcher", "pack_identity", "map_identity", "hook_generator", "name_format",
-                  "organic_names", "website_audit", "google_intel", "headline", "ads_words", "ads_records", "listing_confirm",
+                  "organic_names", "site_reader", "website_audit", "google_intel", "headline", "ads_words", "ads_records", "listing_confirm",
                   "state_check", "sheet_archive", "shared_hosts", "measured", "health_check", "pdf_generator")
 
 
@@ -95,6 +95,7 @@ import pdf_generator  # noqa: E402
 import state_check  # noqa: E402
 import sheet_archive  # noqa: E402
 import listing_confirm  # noqa: E402
+import site_reader  # noqa: E402  (the moved-address warning, by attribute: reload-safe)
 import ads_words  # noqa: E402
 import ads_records  # noqa: E402
 import measured  # noqa: E402  (organic rows and the search time, by attribute: reload-safe)
@@ -553,7 +554,9 @@ if st.session_state.get("scan_done"):
 
         with st.expander("Website", expanded=False):
             web = results.get("website") or {}
-            if web.get("unverified"):
+            if web.get("unverified") and site_reader.moved_note(web):
+                st.warning("%s %s" % (site_reader.moved_note(web), site_reader.MOVED_ASK))
+            elif web.get("unverified"):
                 st.write(web.get('unverified_reason') if str(web.get('unverified_reason', '')).startswith("Couldn't check") else f"Couldn't check: {web.get('unverified_reason', 'blocked')}")
             else:
                 checks = web.get("checks") or {}

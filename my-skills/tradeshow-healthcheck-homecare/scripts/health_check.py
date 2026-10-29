@@ -49,6 +49,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import website_audit  # noqa: E402
 import map_identity  # noqa: E402  (which map card is the prospect)
 import organic_names  # noqa: E402  (real names in the organic Top 3)
+import site_reader  # noqa: E402
 import listing_confirm  # noqa: E402  (the rep confirms the business's own listing)
 import ads_words  # noqa: E402  (what the sheet may say about their ads)
 import ads_records  # noqa: E402  (Google's ad records for their website, Welton 2026-10-22)
@@ -1245,6 +1246,7 @@ def run_health_check(business, cities, state, listing=None):
     if web.get("unverified"):
         reason = web.get("unverified_reason") or web.get("error") or "blocked"
         print_section("WEBSITE:", [
+            ">>> %s %s" % (site_reader.moved_note(web), site_reader.MOVED_ASK) if site_reader.moved_note(web) else
             reason if reason.startswith("Couldn't check") else f"Couldn't check: {reason}",
             "Grade: not counted in overall",
         ])

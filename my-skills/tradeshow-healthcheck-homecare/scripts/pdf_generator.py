@@ -13,6 +13,7 @@ from pathlib import Path
 
 import headline
 import listing_confirm
+import site_reader
 import ads_words
 import ads_records
 from xml.sax.saxutils import escape
@@ -678,6 +679,8 @@ def build_pdf(results):
     if web.get("unverified"):
         reason = web.get("unverified_reason") or web.get("error") or "blocked"
         web_detail = reason if reason.startswith("Couldn't check") else f"Couldn't check: {reason}"
+        if site_reader.moved_note(web):
+            web_detail = "<b>%s</b>" % escape(site_reader.moved_note(web, sheet=True))    # the finding, said plainly
         web_grade_display = "N/A"
     else:
         c = web.get("checks", {})

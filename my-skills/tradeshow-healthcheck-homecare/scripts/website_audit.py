@@ -33,6 +33,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
+import site_reader   # the shared site reader, pinned byte-identical across the five tools (2026-10-29)
+
 
 HEADERS = {
     "User-Agent": (
@@ -153,12 +155,19 @@ def find_internal_link(html, base_url, url_keywords):
         for kw in url_keywords:
             if kw in href_low:
                 if href.startswith("http"):
-                    return href
-                if href.startswith("//"):
-                    return "https:" + href
-                if href.startswith("/"):
-                    return base_url + href
-                return urllib.parse.urljoin(base_url + "/", href)
+                    url = href
+                elif href.startswith("//"):
+                    url = "https:" + href
+                elif href.startswith("/"):
+                    url = base_url + href
+                else:
+                    url = urllib.parse.urljoin(base_url + "/", href)
+                if site_reader.same_site(url, base_url):
+                    return url
+                # Another site's page is not theirs (Welton 2026-10-29): not read, and a No that needed it is
+                # "couldn't check". Look at the next link.
+                _note_unread(url, "another site")
+                break
     return None
 
 
@@ -502,6 +511,23 @@ def audit(url):
             "checks": {},
             "grade": "F",
         }
+    moved = site_reader.landed_elsewhere(url, final_url)
+    if moved:
+        # Before the error check: an address that lands on another site, even one that answers with an error, is
+    # the finding. The address we have lands on another site (Welton 2026-10-29): another site is not theirs to audit, and
+        # where it went is the finding ("is your website still at that address?").
+        return {
+            "url": final_url,
+            "status": status,
+            "error": "the address goes to another site",
+            "checks": {},
+            "grade": None,
+            "unverified": True,
+            "unverified_reason": site_reader.MOVED % (site_reader.site_name(url), moved),
+            "moved_from": site_reader.site_name(url),
+            "moved_to": moved,
+        }
+
     if status and status >= 400:
         return {
             "url": url,
