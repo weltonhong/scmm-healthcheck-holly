@@ -619,3 +619,55 @@ def closed_map_line(town_row, door_row, town, word):
             parts.append("top 3 searched from %s: %s" % (where, ", ".join(top)) if top else _map_phrase(row, where))
     head = "; ".join(parts)
     return "%s. Your listing: Google shows it as %s." % (head[:1].upper() + head[1:], word)
+
+# ---------------------------------------------------------------- the double-read --
+# Every search runs twice, from the town's center and from the office alike (office searches added by Welton
+# 2026-10-28: "a single read can be wrong wherever it's searched from"); agreement prints. If the two reads disagree, one tiebreak read runs
+# and the row prints only when two of the three agree; otherwise it is couldn't check, so "not on page one" never
+# prints from a split result (Welton 2026-10-28). Why: the coordinate search sometimes comes back as a page that
+# was not searched from the town (Valley View, Manhattan KS, 2026-10-28: 1 of 4 reads, plus the 11:50 run), and
+# Google's answer says "Manhattan, KS" either way (receipt 20261028T233500).
+SPLIT_READS = "couldn't check: %d reads of this search from the town's center did not agree"
+SPLIT_READS_OFFICE = "couldn't check: %d reads of this search from your office did not agree"
+
+
+def read_answer(row):
+    """What the sheet prints from one read of a search, or None when the read failed. Ads are left out: they
+    rotate between reads of the same page."""
+    if failed(row):
+        return None
+    lp = row.get("local_pack") or {}
+    return (row.get("rank"), bool(row.get("organic_error")), row.get("organic_maybe"),
+            tuple(row.get("top_3") or ()), tuple(row.get("above") or ()),
+            lp.get("rank"), lp.get("maybe_rank"), bool(lp.get("no_id")), bool(lp.get("confirmed_empty")),
+            tuple((lp.get("card_ids") or [])[:3]), tuple(lp.get("top_3") or ()))
+
+
+def agreed(rows):
+    """The first row whose answer at least two of the reads share, else None."""
+    keys = [read_answer(r) for r in rows]
+    for row, key in zip(rows, keys):
+        if key is not None and keys.count(key) >= 2:
+            return row
+    return None
+
+
+def double_read(run_one, key, *point, split=SPLIT_READS):
+    """(label, row) for one search, read as Welton ruled. run_one(key, *point) -> (label, row) is one read; `point`
+    is the office's (lat, lng) for an office search, nothing for the town's center, and `split` names that point in
+    the couldn't-check text. Both reads failed: the first read's own failure, as before. The row records how many
+    reads it took."""
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = [f.result() for f in [pool.submit(run_one, key, *point) for _ in range(2)]]
+    label, rows = first[0][0], [r for _, r in first]
+    if all(failed(r) for r in rows):
+        return label, rows[0]
+    row = agreed(rows)
+    if row is None:
+        rows.append(run_one(key, *point)[1])
+        row = agreed(rows)
+    if row is None:
+        return label, {"query": next((r.get("query") for r in rows if r and r.get("query")), None),
+                       "rank": None, "top_3": [], "ads": [], "error": split % len(rows), "reads": len(rows)}
+    return label, dict(row, reads=len(rows))

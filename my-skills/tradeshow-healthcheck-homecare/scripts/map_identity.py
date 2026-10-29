@@ -107,10 +107,15 @@ def judge_pack(cards, business, own_cids):
     # A name prints once (Welton 2026-10-20): "Star Mortuary, Star Mortuary" on La Paloma's Boulder City
     # row was one business with two Google listings at 900 Nevada Way (star_mortuary_recorded.json).
     # Positions above still count every card, so a prospect behind both is #3.
+    # Both listings count, and the name says so (Welton 2026-10-28): "Sunrise Cemetery (2 listings)". Google
+    # showed Manhattan KS's "cemetery plots" top 3 as Sunrise, Sunset, Sunrise (two place ids), which printed
+    # as two names (receipt 20261028T233500).
     names = []
     for n, _ in cards:
         if n not in names:
             names.append(n)
+    count = {n: sum(1 for m, _ in cards if m == n) for n in names}
+    names = [n if count[n] == 1 else "%s (%d listings)" % (n, count[n]) for n in names]
     if not own:
         # No confirmed listing id: a name alone never says found and never says not found (Welton's
         # standing ruling, 2026-10-21: never identify a business by name alone). The row reads

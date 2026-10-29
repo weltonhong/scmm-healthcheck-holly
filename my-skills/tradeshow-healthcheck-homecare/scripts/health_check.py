@@ -636,10 +636,10 @@ def check_seo_per_city(business, website, cities, state, own_cids=(), listings=(
     # The same searches from the prospect's own address, alongside (Welton 2026-10-22). Each row keeps its
     # town-centre answer where every reader looks, and the office answer beside it as "door".
     door_pool = ThreadPoolExecutor(max_workers=max(1, len(cities))) if door else None
-    door_futs = [door_pool.submit(run_one, k, door) for k in cities] if door else []
+    door_futs = [door_pool.submit(measured.double_read, run_one, k, door, split=measured.SPLIT_READS_OFFICE) for k in cities] if door else []
     out = {}
     with ThreadPoolExecutor(max_workers=max(1, len(cities))) as ex:
-        futures = [ex.submit(run_one, c) for c in cities]
+        futures = [ex.submit(measured.double_read, run_one, c) for c in cities]
         for f in as_completed(futures):
             city, data = f.result()
             out[city] = data
