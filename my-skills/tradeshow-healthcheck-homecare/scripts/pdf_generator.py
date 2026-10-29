@@ -365,15 +365,8 @@ def _build_recommendations_top2(results):
         ))
 
     # Ads are off the sheet (Welton 2026-10-22): no ads bullet and no "open lane".
-    # ----- SEO Organic --------------------------------------------------
-    not_ranking, points = measured.organic_gaps(cities, seo)
-    if not_ranking:
-        cities_str = ", ".join(not_ranking)
-        score = 50 + len(not_ranking) * 5
-        candidates.append((score,
-            f"When we searched for home care in {cities_str} {measured.searched_when(results)}, {points}, your agency "
-            f"was not on the first page of the regular results."
-        ))
+    # No organic bullet (Welton 2026-10-29): "not on the first page of the regular results" was this route's
+    # page-one miss, which agreed with a live browser 14 of 27 times (receipt 20261029T035000_route-vs-browser-measure).
 
     # ----- Website: only the truly painful failures --------------------
     web_checks = web.get("checks") or {}
@@ -753,8 +746,15 @@ def build_pdf(results):
         section_of += [n] * (len(line_rows) - len(section_of))
     rows = line_rows
 
+    # When the searches ran, and Google's ad records for their website (scripts/ads_records.py), as the table's own
+    # last row (Welton 2026-10-22; moved into the table 2026-10-29): kept on the same page as the row above it
+    # (NOSPLIT), so the note never sits alone at the top of a page away from the table it explains.
+    note = Paragraph(escape(measured.searched_line(results)) + "<br/>Google Ads: "
+                     + escape(ads_records.line(results.get("ads_records"))), ParagraphStyle(
+        "searched", parent=styles["Normal"], fontName="Helvetica-Oblique", fontSize=9, leading=11,
+        textColor=colors.black))
     sc = Table(
-        rows,
+        rows + [[note, "", ""]],
         repeatRows=1,
         colWidths=[2.0 * inch, 0.7 * inch, 4.3 * inch],
     )
@@ -770,8 +770,8 @@ def build_pdf(results):
         # Grade letters: plain string cells styled by FONTSIZE here.
         ("FONTNAME", (1, 1), (1, -1), "Helvetica-Bold"),
         ("FONTSIZE", (1, 1), (1, -1), 12),
-        ("BOX", (0, 0), (-1, -1), 0.5, colors.lightgrey),
-        ("LINEAFTER", (0, 0), (-2, -1), 0.5, colors.lightgrey),
+        ("BOX", (0, 0), (-1, -2), 0.5, colors.lightgrey),
+        ("LINEAFTER", (0, 0), (-2, -2), 0.5, colors.lightgrey),
         ("LEFTPADDING", (0, 0), (-1, -1), 7),
         ("RIGHTPADDING", (0, 0), (-1, -1), 7),
         ("TOPPADDING", (0, 0), (-1, -1), 5),
@@ -788,16 +788,11 @@ def build_pdf(results):
             style += [("TOPPADDING", (0, i), (-1, i), 0), ("BOTTOMPADDING", (0, i - 1), (-1, i - 1), 0)]
         else:
             style.append(("LINEABOVE", (0, i), (-1, i), 0.5, colors.lightgrey))
+    style += [("SPAN", (0, -1), (-1, -1)), ("NOSPLIT", (0, -2), (-1, -1)),
+              ("LEFTPADDING", (0, -1), (-1, -1), 0), ("TOPPADDING", (0, -1), (-1, -1), 3),
+              ("BOTTOMPADDING", (0, -1), (-1, -1), 0)]      # the same height as the old note under the table
     sc.setStyle(TableStyle(style))
     story.append(sc)
-    # When the searches ran, once under the table (Welton 2026-10-22).
-    story.append(Spacer(1, 3))
-    # Google's ad records for their website, one ungraded line in the same note (scripts/ads_records.py,
-    # Welton 2026-10-22): a table row pushed one-page sheets onto a second page.
-    story.append(Paragraph(escape(measured.searched_line(results)) + "<br/>Google Ads: "
-                           + escape(ads_records.line(results.get("ads_records"))), ParagraphStyle(
-        "searched", parent=styles["Normal"], fontName="Helvetica-Oblique", fontSize=9, leading=11,
-        textColor=colors.black)))
     story.append(Spacer(1, 8))
 
     # Recommendations

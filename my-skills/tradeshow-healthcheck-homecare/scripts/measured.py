@@ -514,23 +514,6 @@ def map_bullet(items, who="Families"):
     return (100 + gaps * 8, picked) if picked else None
 
 
-def organic_gaps(keys, seo):
-    """(keys not on page one, the points phrase) for the organic bullet, or ([], None).
-
-    A search counts only when it was read from the town's center and was not on page one there, and was not on page
-    one from their office either (or the office could not be searched). The phrase names the points actually measured.
-    """
-    out = [k for k in keys if page_one(seo.get(k)) is False and page_one((seo.get(k) or {}).get("door")) is not True]
-    if not out:
-        return [], None
-    towns = []
-    for k in out:
-        if town_of(k) not in towns:
-            towns.append(town_of(k))
-    where = center(escape(towns[0])) if len(towns) == 1 else "the center of each town"
-    both = all(page_one((seo.get(k) or {}).get("door")) is False for k in out)
-    return out, ("from your office and from %s" % where) if both else "from %s" % where
-
 
 def office_note(rows):
     """One line under a section when the office could not be searched (no confirmed address): said once, not per line."""

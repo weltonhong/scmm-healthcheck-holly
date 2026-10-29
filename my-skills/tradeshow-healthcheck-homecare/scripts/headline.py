@@ -174,13 +174,7 @@ def measured_headline(results, searchers="Families"):
                 _where([first], split), _join(rivals), escape(kw)))
         return " ".join(lines)
 
-    # Not on page one from the town's center, and not from their office either (or the office was not searched).
-    off_page_one = [l for l in labels if organic_rank(seo.get(l)) == 0
-                    and measured.page_one((seo.get(l) or {}).get("door")) is not True]
-    if off_page_one and not all(_is_cremation(l) for l in off_page_one):
-        # One look at one moment (Welton 2026-10-22): said as when we searched, not as where they stand.
-        office = all(measured.page_one((seo.get(l) or {}).get("door")) is False for l in off_page_one)
-        return "When we searched %s %s, from %s%s, you weren't on page one of Google." % (
-            _phrase(off_page_one, split), measured.searched_when(results),
-            "your office and from " if office else "", _where(off_page_one, split))
+    # No organic headline (Welton 2026-10-29): "you weren't on page one of Google" came from this search route's
+    # page-one miss, which agreed with a live browser 14 of 27 times (receipt 20261029T035000_route-vs-browser-measure).
+    # Losing it, a sheet with no map gap has no headline and opens on the grade banner.
     return None
