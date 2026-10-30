@@ -77,7 +77,7 @@ import importlib  # noqa: E402
 _INTEL_DIR = SCRIPTS_DIR.parents[1] / "quick-intel" / "scripts"
 _BOOTH_MODULES = ("name_matcher", "pack_identity", "map_identity", "hook_generator", "name_format",
                   "organic_names", "site_reader", "website_audit", "google_intel", "headline", "ads_words", "ads_records", "listing_confirm",
-                  "state_check", "sheet_archive", "shared_hosts", "measured", "health_check", "pdf_generator")
+                  "google_serp_rank", "state_check", "sheet_archive", "shared_hosts", "measured", "health_check", "pdf_generator")
 
 
 def _code_version():
@@ -154,11 +154,11 @@ class _QueueWriter(io.TextIOBase):
             self._buf = ""
 
 
-def _run_in_thread(business, cities, state, q, result_box, listing=None, phone=""):
+def _run_in_thread(business, cities, state, q, result_box, listing=None, phone="", pin=None):
     writer = _QueueWriter(q)
     try:
         with redirect_stdout(writer), redirect_stderr(writer):
-            results = health_check.run_health_check(business, cities, state, listing=listing, phone=phone)
+            results = health_check.run_health_check(business, cities, state, listing=listing, phone=phone, pin=pin)
         writer.flush()
         result_box["results"] = results
     except Exception as e:
@@ -280,6 +280,7 @@ if submitted:
     st.session_state["archive_done"] = False
     st.session_state["archive_note"] = None
     st.session_state["listing_lookup"] = None   # one Google lookup per scan
+    st.session_state["listing_pin"] = None      # where that lookup was pinned (scripts/state_check.py town_pin)
     st.session_state["listing_answer"] = None   # "Is this your address?" not asked yet
     st.session_state["form_values"] = {
         "business": business.strip(),
@@ -306,9 +307,13 @@ def _validate(values):
 def _listing_lookup(values):
     """The business's own Google listings, looked up once per scan (the state check and the question share it)."""
     if st.session_state.get("listing_lookup") is None:
+        # Pinned to the town the rep typed (Welton 2026-10-29: words alone are answered by where the server is);
+        # the scan reuses the same pin, carried in st.session_state["listing_pin"].
+        pin = {}
         st.session_state["listing_lookup"] = state_check.check_listing_state(
             values["business"], values["home_city"], values["state"],
-            os.environ.get("GOOGLE_API_KEY"))
+            os.environ.get("GOOGLE_API_KEY"), locate=state_check.town_lookup, pin_out=pin)
+        st.session_state["listing_pin"] = pin
     return st.session_state["listing_lookup"]
 
 
@@ -410,7 +415,8 @@ if st.session_state.get("scan_started") and not st.session_state.get("scan_done"
         result_box = {}
         worker = threading.Thread(
             target=_run_in_thread,
-            args=(values["business"], cities, values["state"], q, result_box, listing, values.get("phone", "")),
+            args=(values["business"], cities, values["state"], q, result_box, listing, values.get("phone", ""),
+                  st.session_state.get("listing_pin")),
             daemon=True,
         )
         worker.start()

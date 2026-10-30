@@ -426,7 +426,7 @@ def parse_places(data):
 # ----------------------------- check functions -----------------------------
 
 
-def check_google_intel(business, city, state, phone=""):
+def check_google_intel(business, city, state, phone="", pin=None):
     """Wrap quick-intel/google_intel.py for target + competitor data."""
     repo_root = SCRIPT_DIR.parents[2]
     intel_script = repo_root / "my-skills" / "quick-intel" / "scripts" / "google_intel.py"
@@ -440,6 +440,10 @@ def check_google_intel(business, city, state, phone=""):
                 # The prospect's phone confirms their own listing (Welton 2026-10-29).
                 *(["--phone", phone] if phone else []),
                 "--town-fallback",
+                # The town's place, so Google answers for the town and not for wherever this runs (Welton
+                # 2026-10-29); without one the lookup searches with words only and records why.
+                *(["--latlng", "%s,%s" % tuple((pin or {}).get("at"))] if (pin or {}).get("pinned") else []),
+                "--pin-from", (pin or {}).get("from") or (pin or {}).get("why") or "no place passed to the scan",
                 "--vertical", "home care",
             ],
             capture_output=True, text=True, timeout=30
@@ -1049,7 +1053,7 @@ def print_section(label, body):
 # ----------------------------- main -----------------------------
 
 
-def run_health_check(business, cities, state, listing=None, phone=""):
+def run_health_check(business, cities, state, listing=None, phone="", pin=None):
     """cities: list of city names (1-3). First entry is the home city."""
     api_key = get_google_api_key()
     if not api_key:
@@ -1076,12 +1080,18 @@ def run_health_check(business, cities, state, listing=None, phone=""):
     # nearby is measured from the town and the review gap cannot be given.
     if not phone and listing_confirm.known(listing):
         phone = listing.get("phone") or ""
-    intel = check_google_intel(business, home_city, state, phone=phone)
+    # pin: the "Is this your address?" lookup's pin record (state_check.town_pin), reused so the scan's Places
+    # searches are pinned to the same place; None means the caller looked no town up (Welton 2026-10-29).
+    intel = check_google_intel(business, home_city, state, phone=phone, pin=pin)
     if listing is not None:
         # The booth app asked the rep "Is this your address?" (scripts/listing_confirm.py).
         # Not confirmed: nothing is taken from Google's first answer for the name.
         intel = listing_confirm.apply(intel, listing)
     results["google_intel"] = intel
+    # Where the Places searches were pinned, or why not: the town's place the scan was given (in the app, the
+    # one the "Is this your address?" lookup was pinned to), and what the scan's own lookup recorded.
+    results["places_pin"] = {"town": pin or {"pinned": False, "why": "no place passed to the scan"},
+                             "scan": intel.get("places_pin")}
     target = intel.get("target") or {}
     # A listing we can stand behind; otherwise every number from it reads "Couldn't check"
     # (also when the lookup itself failed, which used to print "NOT FOUND" and a full gap).
@@ -1370,7 +1380,10 @@ def main():
     if city3:
         cities.append(city3)
 
-    results = run_health_check(business, cities, state, phone=args.phone)
+    import state_check
+    # The command line has no "Is this your address?" step, so it looks the town up itself for the pin.
+    pin = state_check.town_pin(city1, state, state_check.town_lookup)
+    results = run_health_check(business, cities, state, phone=args.phone, pin=pin)
 
     out_json = SCRIPT_DIR / "temp_health_check.json"
     out_json.write_text(json.dumps(results, indent=2), encoding="utf-8")

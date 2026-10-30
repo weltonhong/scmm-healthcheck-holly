@@ -185,17 +185,58 @@ def get_api_key():
     return key
 
 
-def places_search(query, api_key, max_results=5):
-    """Run a Places API text search. Returns list of place dicts."""
+# Google's raw answers, kept while main() runs (Welton 2026-10-29: "Make the archive keep Google's raw answer, not just
+# what the lookup kept from it"). Haven, Ozark MO: the live app's rival search came back without Amedisys while the
+# same code here found it, and only the kept result was archived. main() turns recording on and prints the answers as
+# "places_raw"; the booth saves that output in results.json. None outside main(): the booth app's own process calls
+# places_search for "Is this your address?" on every scan, and must not keep a growing list.
+_RAW = None
+
+
+# WHERE A PLACES SEARCH IS PINNED (Welton 2026-10-29). A text search that sends only words is answered partly by where
+# the REQUEST comes from, so the live booth app on its server and this PC got different listings for the same words
+# (Haven, Ozark MO: the server's rival search had no Amedisys and the sheet lost its competitor section). Each of the
+# booth's four Places searches (the "Is this your address?" lookup in scripts/state_check.py, and here their own
+# listing, the rival search and the town) now sends the town's place as a locationBias circle: a bias, never a
+# restriction, so a listing outside the circle can still come back. The same circle and the same record as pre-call's
+# half (pre-call-audit/scripts/places_pin.py, which this file cannot import: the booth deploy repos do not carry it);
+# test_booth_places_pin.py asserts the two agree whenever both are in the tree.
+# No place available: the search goes out with words only, exactly as before, and the output records why. Which
+# listing is theirs is still decided by phone or street (business_identity), so an unpinned search can confirm fewer
+# listings, never a different business.
+RADIUS_M = 50000.0      # the largest circle Places text search accepts for a locationBias (50 km)
+
+
+def bias(at, radius_m=RADIUS_M):
+    """The locationBias for a search pinned at `at` (lat, lng), or None when there is no place."""
+    if not at:
+        return None
+    return {"circle": {"center": {"latitude": float(at[0]), "longitude": float(at[1])},
+                       "radius": float(radius_m)}}
+
+
+def pin_note(at, how):
+    """What the output records about the pin: where from, or why there was none."""
+    if at:
+        return {"pinned": True, "at": [float(at[0]), float(at[1])], "radius_m": RADIUS_M, "from": how}
+    return {"pinned": False, "at": None, "why": how or "no place available",
+            "effect": "searched with words only, as before 2026-10-29"}
+
+
+def places_search(query, api_key, max_results=5, at=None):
+    """Run a Places API text search, pinned at `at` (lat, lng) when given. Returns list of place dicts."""
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": api_key,
         "X-Goog-FieldMask": FIELD_MASK,
     }
-    body = json.dumps({
+    sent = {
         "textQuery": query,
         "maxResultCount": max_results,
-    }).encode("utf-8")
+    }
+    if bias(at):
+        sent["locationBias"] = bias(at)
+    body = json.dumps(sent).encode("utf-8")
 
     try:
         req = urllib.request.Request(
@@ -204,7 +245,11 @@ def places_search(query, api_key, max_results=5):
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except Exception as e:
+        if _RAW is not None:
+            _RAW.append({"sent": sent, "error": str(e)})
         return {"error": str(e)}
+    if _RAW is not None:
+        _RAW.append({"sent": sent, "answer": data})
 
     results = []
     for place in data.get("places", []):
@@ -323,11 +368,11 @@ def _identity():
     return business_identity
 
 
-def _town_point(city, state, api_key):
+def _town_point(city, state, api_key, at=None):
     """The town the rep typed, as a Places listing with a map position, or None. Only an answer that is the town
     itself (a locality) in the typed state counts; anything else is no answer, never a guess."""
     bi = _identity()
-    res = places_search("%s, %s" % (city, state), api_key, max_results=3)
+    res = places_search("%s, %s" % (city, state), api_key, max_results=3, **({"at": at} if at else {}))
     for p in res if isinstance(res, list) else []:
         types = set(p.get("types") or []) | {p.get("primary_type") or ""}
         if (types & {"locality", "sublocality", "administrative_area_level_3", "postal_town"}
@@ -395,7 +440,13 @@ def main():
     # and name only listings that are plainly not them. Without it (Quick Intel cards) nothing changes.
     parser.add_argument("--town-fallback", action="store_true",
                         help="unconfirmed listing: measure nearby from the town and keep only plainly different rivals")
+    # The town's place, from the caller's own town lookup (the booth: state_check.town_pin), and where it came from
+    # or why there is none. Without --latlng every search goes out with words only and "places_pin" says why.
+    parser.add_argument("--latlng", default="", help="LAT,LNG: pin the Places searches here (50 km bias)")
+    parser.add_argument("--pin-from", default="", help="where --latlng came from, or why there is no place")
     args = parser.parse_args()
+    global _RAW
+    _RAW = []          # every Places request this lookup sends and Google's whole answer, printed as "places_raw"
 
     vertical_key = resolve_vertical(args.vertical)
     config = VERTICAL_CONFIG[vertical_key]
@@ -405,13 +456,23 @@ def main():
         print(json.dumps({"error": "GOOGLE_API_KEY not found"}))
         sys.exit(1)
 
+    at = None
+    try:
+        lat, lng = (float(x) for x in args.latlng.split(","))
+        at = (lat, lng)
+    except ValueError:
+        pass
+    pin = {"at": at} if at else {}
+    places_pin = pin_note(at, args.pin_from if at or args.pin_from else
+                          ("--latlng not readable: %r" % args.latlng if args.latlng else "no place given (no --latlng)"))
+
     # Search 1: Target business (exact name + location)
     target_query = f"{args.business} {args.city} {args.state}"
-    target_results = places_search(target_query, api_key, max_results=3)
+    target_results = places_search(target_query, api_key, max_results=3, **pin)
 
     # Search 2: Competitors (vertical-specific query + city)
     competitor_query = f"{config['query']} {args.city} {args.state}"
-    competitor_results = places_search(competitor_query, api_key, max_results=10)
+    competitor_results = places_search(competitor_query, api_key, max_results=10, **pin)
 
     # Identify target in results
     # The first result is not the business until the shared identity rule says so (Welton 2026-10-22, P20): the
@@ -448,7 +509,7 @@ def main():
     if isinstance(target, dict) and _miles(target, target) is not None:
         anchor, nearby_from = target, "their listing"
     elif args.town_fallback and not target and isinstance(competitor_results, list) and isinstance(target_results, list):
-        anchor = _town_point(args.city, args.state, api_key)
+        anchor = _town_point(args.city, args.state, api_key, **pin)
         nearby_from = "the center of %s" % args.city if anchor else None
     if isinstance(competitor_results, list):
         if anchor is None:
@@ -505,6 +566,11 @@ def main():
         # word with the name and their listing could not be confirmed (Welton 2026-10-29).
         "nearby_from": nearby_from,
         "cant_tell_listings": cant_tell,
+        # What was sent to Google (the words, and the locationBias when pinned) and its whole answer, for each
+        # Places search.
+        "places_raw": _RAW,
+        # Where the searches were pinned, or why they went out with words only (Welton 2026-10-29).
+        "places_pin": places_pin,
     }
 
     print(json.dumps(output, indent=2))

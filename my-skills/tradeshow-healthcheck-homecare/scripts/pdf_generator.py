@@ -101,6 +101,40 @@ def safe_filename(name):
     return cleaned.strip().replace(" ", "_")
 
 
+# The red footer (Welton 2026-10-29): what Google showed, in place of a sentence about what families do, which nothing
+# on the sheet measures. A lead line, then the three names on their own lines. Printed only when the map searched
+# from the centre of their town was read, all three names are there, their own listing is confirmed and they are not
+# among the three; otherwise the claim lines stay blank (no second version). Pinned by test_footer_wording.py.
+FOOTER_NOUN, FOOTER_KEY = 'home care', '%s'
+
+
+def footer_claim(results):
+    """The footer for this scan: the lead line and the three names, each on its own line (Google's names carry
+    commas, so a sentence listing them cannot be read; Welton 2026-10-29), or None."""
+    town = ((results or {}).get("cities") or [""])[0]
+    p = (((results or {}).get("3pack") or {}).get("results") or {}).get(FOOTER_KEY % town) if town else None
+    if not isinstance(p, dict) or p.get("error") or p.get("no_id") or p.get("maybe_rank") is not None:
+        return None
+    if p.get("rank") is not None or p.get("in_3_pack") is not False or measured.listing_closed(results):
+        return None
+    if not listing_confirm.known(((results or {}).get("google_intel") or {}).get("target")):
+        return None
+    names = [n for n in (p.get("top_3") or []) if n]
+    if len(names) != 3:
+        return None
+    return ["When someone in %s searches for %s, these three come up first:" % (town, FOOTER_NOUN)] + names
+
+
+def _claim_lines(lines, width):
+    """The footer lines at one size that fits the bar on every line, a smaller size before a cut; none when a line
+    cannot fit at all (nothing rather than a cut name)."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    for size in (10, 9.5, 9, 8.5, 8):
+        if lines and all(stringWidth(l, "Helvetica-Bold", size) <= width for l in lines):
+            return [("Helvetica-Bold", size, l) for l in lines]
+    return []
+
+
 class CTAFooterCanvas(pdfcanvas.Canvas):
     """Custom canvas that draws a 'Call today' bar across the bottom of every
     page. On the LAST page only, also draws a QR code that links to the
@@ -156,10 +190,9 @@ class CTAFooterCanvas(pdfcanvas.Canvas):
         # on both pages so the rep block (name, email, brand) renders on
         # page 1 AND page 2; only the QR is conditional.
         tagline = [
-            ("Helvetica-Bold", 11,
-             "Every week these gaps stay open, your competitors get"),
-            ("Helvetica-Bold", 11,
-             "stronger and your phone stays quiet."),
+            # The two claim lines are this scan's footer sentence or blank (footer_claim, Welton 2026-10-29).
+            ("Helvetica-Bold", 11, ""),
+            ("Helvetica-Bold", 11, ""),
             ("Helvetica", 10,
              "We close these gaps for home care agencies like yours.  Call today."),
         ]
@@ -179,9 +212,17 @@ class CTAFooterCanvas(pdfcanvas.Canvas):
         ]
 
         all_lines = tagline + contact
-        if not getattr(CTAFooterCanvas, "gaps_measured", True):
-            # "Every week these gaps stay open" only beside a gap the sheet measured (Welton 2026-10-21).
-            all_lines = [(f, z, "") for f, z, _ in tagline[:2]] + all_lines[2:]
+        # The claim lines: this scan's lead line and the three names, then the call-to-action line, spread evenly in
+        # the space above the rep's details; or, when there is nothing to say, blank (Welton 2026-10-29).
+        claim = _claim_lines(getattr(CTAFooterCanvas, "claim", None), text_right - text_left)
+        if claim:
+            block = claim + [all_lines[2]]
+            top, bottom = bar_y + bar_h - 15, bar_y + 68
+            step = (top - bottom) / (len(block) - 1)
+            all_lines = block + all_lines[3:]
+            positions = [top - i * step for i in range(len(block))] + positions[3:]
+        else:
+            all_lines = [(f, z, "") for f, z, _ in all_lines[:2]] + all_lines[2:]
         text_center_x = (text_left + text_right) / 2
         for (font, size, text), y in zip(all_lines, positions):
             self.setFont(font, size)
@@ -801,7 +842,7 @@ def build_pdf(results):
     # Recommendations
     # Nothing measured to say: no section at all, never a sentence built on a failed search.
     recs = build_recommendations(results)
-    CTAFooterCanvas.gaps_measured = bool(recs)
+    CTAFooterCanvas.claim = footer_claim(results)
     for i, rec in enumerate(recs):
         # A bullet never splits across two pages, and the heading travels with the first one (Welton 2026-10-22:
         # a line and a half of a bullet sat alone on page 3; the heading alone ended a page).

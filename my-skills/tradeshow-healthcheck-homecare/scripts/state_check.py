@@ -54,15 +54,46 @@ def _intel():
     return google_intel
 
 
-def check_listing_state(business, city, state, api_key, search=None):
+def town_lookup(city, state):
+    """((lat, lng), how) for the town the rep typed, or (None, why): the booth's own town lookup, the one its map
+    and organic searches are pinned with (google_serp_rank.geocode_city_osm: the state spelled out, every answer in
+    that state, a town and never its county)."""
+    import google_serp_rank
+    at = google_serp_rank.geocode_city_osm("%s %s" % (city, state))
+    if at:
+        return tuple(at), "the booth's town lookup (%s, %s)" % (city, state)
+    return None, "the town lookup placed nothing for %s, %s" % (city, state)
+
+
+def town_pin(city, state, locate=None):
+    """The pin record for the town the rep typed (google_intel.pin_note): pinned, with the place and where it came
+    from, or not pinned, with why. `locate` is town_lookup in the app and the command line; it is passed in, never
+    defaulted, so no test reaches the lookup by accident (Welton 2026-10-29: pin the booth's Places searches)."""
+    gi = _intel()
+    if locate is None:
+        return gi.pin_note(None, "no town lookup on this path")
+    try:
+        at, how = locate(city, state)
+    except Exception as e:
+        return gi.pin_note(None, "the town lookup failed (%s)" % type(e).__name__)
+    return gi.pin_note(at, how)
+
+
+def check_listing_state(business, city, state, api_key, search=None, locate=None, pin_out=None):
     """Return (verdict, listings): the lookup's places whose name is the business's, each with its "state".
 
     The same places are what the rep is asked to confirm (scripts/listing_confirm.py), so the
-    app makes this one lookup per scan.
+    app makes this one lookup per scan. The search is pinned to the town when `locate` places it
+    (town_pin); the pin record goes into `pin_out` and from there to the scan, which reuses it.
     """
     gi = _intel()
     search = search or gi.places_search
-    places = search("%s %s %s" % (business, city, state), api_key, max_results=3)
+    pin = town_pin(city, state, locate)
+    if pin_out is not None:
+        pin_out.clear()
+        pin_out.update(pin)
+    places = search("%s %s %s" % (business, city, state), api_key, max_results=3,
+                    **({"at": tuple(pin["at"])} if pin["pinned"] else {}))
     if not isinstance(places, list):
         return STATE_UNCONFIRMED, []
     own = [dict(p, state=address_state(p.get("address")))
