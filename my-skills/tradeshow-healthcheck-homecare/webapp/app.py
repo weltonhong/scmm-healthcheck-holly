@@ -154,11 +154,11 @@ class _QueueWriter(io.TextIOBase):
             self._buf = ""
 
 
-def _run_in_thread(business, cities, state, q, result_box, listing=None):
+def _run_in_thread(business, cities, state, q, result_box, listing=None, phone=""):
     writer = _QueueWriter(q)
     try:
         with redirect_stdout(writer), redirect_stderr(writer):
-            results = health_check.run_health_check(business, cities, state, listing=listing)
+            results = health_check.run_health_check(business, cities, state, listing=listing, phone=phone)
         writer.flush()
         result_box["results"] = results
     except Exception as e:
@@ -264,6 +264,8 @@ with st.form("health_check_form", clear_on_submit=False):
     state = st.selectbox("State", US_STATES, index=None, placeholder="Choose the business's state")
     second_city = st.text_input("Second City (optional)", placeholder="leave blank to skip")
     third_city = st.text_input("Third City (optional)", placeholder="leave blank to skip")
+    # Ask them for it (Welton 2026-10-29): it confirms their own Google listing, which the review gap needs.
+    phone = st.text_input("Their Phone (ask them)", placeholder="e.g., 417-581-1234")
     submitted = st.form_submit_button("Run Health Check", type="primary")
 
 
@@ -285,6 +287,7 @@ if submitted:
         "state": (state or "").strip(),
         "second_city": second_city.strip(),
         "third_city": third_city.strip(),
+        "phone": phone.strip(),
     }
 
 
@@ -407,7 +410,7 @@ if st.session_state.get("scan_started") and not st.session_state.get("scan_done"
         result_box = {}
         worker = threading.Thread(
             target=_run_in_thread,
-            args=(values["business"], cities, values["state"], q, result_box, listing),
+            args=(values["business"], cities, values["state"], q, result_box, listing, values.get("phone", "")),
             daemon=True,
         )
         worker.start()

@@ -315,6 +315,38 @@ def _miles(a, b):
     return 3958.8 * 2 * math.asin(math.sqrt(h))
 
 
+def _identity():
+    """The shared identity rule (keap/card_queue/business_identity.py), loaded on first use: the booth tools load this
+    file for its helpers from a folder that may not carry it."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "keap", "card_queue"))
+    import business_identity
+    return business_identity
+
+
+def _town_point(city, state, api_key):
+    """The town the rep typed, as a Places listing with a map position, or None. Only an answer that is the town
+    itself (a locality) in the typed state counts; anything else is no answer, never a guess."""
+    bi = _identity()
+    res = places_search("%s, %s" % (city, state), api_key, max_results=3)
+    for p in res if isinstance(res, list) else []:
+        types = set(p.get("types") or []) | {p.get("primary_type") or ""}
+        if (types & {"locality", "sublocality", "administrative_area_level_3", "postal_town"}
+                and bi.address_state(p.get("address")) == bi.state_code(state) and _miles(p, p) is not None):
+            return p
+    return None
+
+
+def _could_be_them(business, name, state):
+    """True when a listing's name shares a distinctive word with theirs, or is their name: without their listing
+    confirmed, such a listing may be theirs, so it is never called a rival. A name sharing nothing is plainly a
+    different business (Welton 2026-10-29)."""
+    bi = _identity()
+    ignore = bi.state_words(state)
+    # name_relation "contained" is not used: it holds for two names that share only generic words ("Home Health"),
+    # which is the residual-generic trap (.claude/rules/name-matching.md), not evidence they are the same.
+    return bool(bi.shared_words(business, name, ignore)) or bi.name_relation(business, name, ignore=ignore) == "equal"
+
+
 def is_same_business(target_name, candidate_name):
     """Fuzzy match for target-vs-competitor. Handles 'Greenwood' vs
     'Green-Wood' (hyphen becomes space), 'The X' vs 'X', and
@@ -357,6 +389,12 @@ def main():
         help="Vertical key (funeral_home, cemetery, home_care, hospice, "
              "assisted_living, home_health)",
     )
+    parser.add_argument("--phone", default="", help="The contact's phone, to confirm their listing")
+    parser.add_argument("--street", default="", help="The contact's street address, to confirm their listing")
+    # The booth sets this (Welton 2026-10-29): when their listing cannot be confirmed, measure nearby from the town
+    # and name only listings that are plainly not them. Without it (Quick Intel cards) nothing changes.
+    parser.add_argument("--town-fallback", action="store_true",
+                        help="unconfirmed listing: measure nearby from the town and keep only plainly different rivals")
     args = parser.parse_args()
 
     vertical_key = resolve_vertical(args.vertical)
@@ -376,25 +414,58 @@ def main():
     competitor_results = places_search(competitor_query, api_key, max_results=10)
 
     # Identify target in results
-    target = None
+    # The first result is not the business until the shared identity rule says so (Welton 2026-10-22, P20): the
+    # same rule as the batch card (business_identity.match_business). Imported here, not at the top, because the booth
+    # tools load this file for its helpers from a folder without keap/card_queue.
+    target, target_check = None, "no listing came back"
     if isinstance(target_results, list) and target_results:
-        target = target_results[0]
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..",
+                                        "keap", "card_queue"))
+        import business_identity
+        for cand in target_results:
+            ok, why = business_identity.match_business(
+                args.business, cand.get("name") or "", cand.get("address") or "", args.city, args.state,
+                keap_street=args.street, keap_phone=args.phone, google_phone=cand.get("phone") or "")
+            if ok:
+                target, target_check = cand, why
+                break
+            target_check = "no listing matched: " + why
+    elif not isinstance(target_results, list):
+        target_check = "the lookup failed"
 
     # Filter competitors: exclude target (fuzzy) + opt-in vertical match
     # + dedupe by normalized name so multiple entrances to the same
     # cemetery/hospital don't all count as separate competitors.
     competitors = []
-    seen_normalized = set()
     # NEARBY means measured on the map, never a shared word (Welton 2026-10-22: "Burd Home Health - Lake Ozark"
-    # came back for "home health Ozark MO" from about 100 miles away). Without their own listing's position no
-    # listing can be called nearby, so none is, and the lookup says why.
-    nearby, nearby_error = [], None
+    # came back for "home health Ozark MO" from about 100 miles away). It is measured from their own listing.
+    # When that listing cannot be confirmed (no phone or street matched one, as at a booth where the rep got no
+    # phone), it is measured from the center of the town the rep typed (Welton 2026-10-29), and the rival list
+    # takes only listings that are plainly NOT them: a listing sharing a distinctive word with their name could be
+    # theirs, so it stays off as can't tell. Saying a listing is someone else needs less evidence than saying it
+    # is them, and only this direction is used here.
+    nearby, nearby_error, anchor, nearby_from, cant_tell = [], None, None, None, []
+    if isinstance(target, dict) and _miles(target, target) is not None:
+        anchor, nearby_from = target, "their listing"
+    elif args.town_fallback and not target and isinstance(competitor_results, list) and isinstance(target_results, list):
+        anchor = _town_point(args.city, args.state, api_key)
+        nearby_from = "the center of %s" % args.city if anchor else None
     if isinstance(competitor_results, list):
-        if not (isinstance(target, dict) and _miles(target, target) is not None):
-            nearby_error = "their own listing has no map position, so nearby cannot be measured"
+        if anchor is None:
+            nearby_error = ("their own listing has no map position, so nearby cannot be measured" if target
+                            else "their listing could not be confirmed and the town could not be placed on the map,"
+                                 " so nearby cannot be measured")
         else:
-            nearby = [c for c in competitor_results if not _same_place(c, target)
-                      and (_miles(c, target) or NEARBY_MILES + 1) <= NEARBY_MILES]
+            nearby = [c for c in competitor_results if not _same_place(c, anchor)
+                      and (_miles(c, anchor) or NEARBY_MILES + 1) <= NEARBY_MILES]
+    # Unconfirmed: the places of every listing that could be theirs. A listing inside one of them (the Great Mausoleum
+    # inside Forest Lawn, by Google's containingPlaces) is not plainly a different business either (Welton 2026-10-22:
+    # never a building on their own grounds).
+    maybe_theirs = set()
+    if not target and nearby_from not in (None, "their listing"):
+        for p in (target_results if isinstance(target_results, list) else []) + nearby:
+            if p.get("place_id") and _could_be_them(args.business, p.get("name") or "", args.state):
+                maybe_theirs.add(p["place_id"])
     if isinstance(competitor_results, list):
         for c in nearby:
             cname = c.get("name", "") or ""
@@ -403,24 +474,21 @@ def main():
             # never swapped for a same-name listing with more reviews.
             if target and _same_place(c, target):
                 continue
+            if not target and nearby_from != "their listing" and (
+                    _could_be_them(args.business, cname, args.state) or set(c.get("inside") or []) & maybe_theirs):
+                cant_tell.append(cname)
+                continue
             if not matches_vertical(c, config):
                 continue
-            key = _compact(normalize_name(cname))
-            # If we've already seen a result whose normalized name is a
-            # superset/subset, treat as duplicate (catches "Greenwood
-            # Cemetery" vs "Greenwood Cemetery Sunset Park Entrance")
-            is_dup = False
-            for prev in seen_normalized:
-                if key == prev or key in prev or prev in key:
-                    is_dup = True
-                    break
-            if is_dup:
+            # A duplicate is the same PLACE (an entrance inside a cemetery is inside its place), never a shared name
+            # (P20, 2026-10-22): "Smith Funeral Home" and "Smith Funeral Home of Lima" are two businesses.
+            if any(_same_place(c, prev) for prev in competitors):
                 continue
-            seen_normalized.add(key)
             competitors.append(c)
 
     output = {
-        "target": target if isinstance(target, dict) else {"error": str(target_results)},
+        "target": target if isinstance(target, dict) else {"error": target_check},
+        "target_check": target_check,
         "competitors": competitors[:5],
         "vertical": vertical_key,
         "vertical_plural": config["vertical_plural"],
@@ -433,6 +501,10 @@ def main():
         # Every nearby listing the lookup read, any trade: the only names the booth sheet's organic Top 3 may print
         # (my-skills/*/scripts/organic_names.py).
         "nearby_listings": nearby,
+        # Where "nearby" was measured from, and the nearby listings left off the rival list because they share a
+        # word with the name and their listing could not be confirmed (Welton 2026-10-29).
+        "nearby_from": nearby_from,
+        "cant_tell_listings": cant_tell,
     }
 
     print(json.dumps(output, indent=2))

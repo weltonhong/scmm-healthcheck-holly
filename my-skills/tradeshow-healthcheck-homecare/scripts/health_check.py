@@ -426,7 +426,7 @@ def parse_places(data):
 # ----------------------------- check functions -----------------------------
 
 
-def check_google_intel(business, city, state):
+def check_google_intel(business, city, state, phone=""):
     """Wrap quick-intel/google_intel.py for target + competitor data."""
     repo_root = SCRIPT_DIR.parents[2]
     intel_script = repo_root / "my-skills" / "quick-intel" / "scripts" / "google_intel.py"
@@ -437,6 +437,9 @@ def check_google_intel(business, city, state):
                 "--business", business,
                 "--city", city,
                 "--state", state,
+                # The prospect's phone confirms their own listing (Welton 2026-10-29).
+                *(["--phone", phone] if phone else []),
+                "--town-fallback",
                 "--vertical", "home care",
             ],
             capture_output=True, text=True, timeout=30
@@ -1046,7 +1049,7 @@ def print_section(label, body):
 # ----------------------------- main -----------------------------
 
 
-def run_health_check(business, cities, state, listing=None):
+def run_health_check(business, cities, state, listing=None, phone=""):
     """cities: list of city names (1-3). First entry is the home city."""
     api_key = get_google_api_key()
     if not api_key:
@@ -1068,7 +1071,12 @@ def run_health_check(business, cities, state, listing=None):
     # Step 1: Google intel synchronously (everything else depends on the website)
     print(f"Pulling Google data for {home_city}, {state}...")
     sys.stdout.flush()
-    intel = check_google_intel(business, home_city, state)
+    # The phone the rep typed, else the phone on the listing the owner confirmed as theirs: either one
+    # confirms their listing, and "nearby" is then measured from it (Welton 2026-10-29). Without one,
+    # nearby is measured from the town and the review gap cannot be given.
+    if not phone and listing_confirm.known(listing):
+        phone = listing.get("phone") or ""
+    intel = check_google_intel(business, home_city, state, phone=phone)
     if listing is not None:
         # The booth app asked the rep "Is this your address?" (scripts/listing_confirm.py).
         # Not confirmed: nothing is taken from Google's first answer for the name.
@@ -1341,6 +1349,7 @@ def main():
     parser.add_argument("state", nargs="?")
     parser.add_argument("city2", nargs="?", help="Second city to scan from")
     parser.add_argument("city3", nargs="?", help="Third city to scan from (optional)")
+    parser.add_argument("--phone", default="", help="The business's phone, to confirm their Google listing")
     parser.add_argument("--no-pdf", action="store_true", help="Skip PDF generation")
     args = parser.parse_args()
 
@@ -1361,7 +1370,7 @@ def main():
     if city3:
         cities.append(city3)
 
-    results = run_health_check(business, cities, state)
+    results = run_health_check(business, cities, state, phone=args.phone)
 
     out_json = SCRIPT_DIR / "temp_health_check.json"
     out_json.write_text(json.dumps(results, indent=2), encoding="utf-8")
