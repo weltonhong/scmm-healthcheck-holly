@@ -55,14 +55,23 @@ def _intel():
 
 
 def town_lookup(city, state):
-    """((lat, lng), how) for the town the rep typed, or (None, why): the booth's own town lookup, the one its map
-    and organic searches are pinned with (google_serp_rank.geocode_city_osm: the state spelled out, every answer in
-    that state, a town and never its county)."""
-    import google_serp_rank
-    at = google_serp_rank.geocode_city_osm("%s %s" % (city, state))
-    if at:
-        return tuple(at), "the booth's town lookup (%s, %s)" % (city, state)
-    return None, "the town lookup placed nothing for %s, %s" % (city, state)
+    """((lat, lng), how, record) for the town the rep typed, or (None, why, record): town_place.resolve, the lookup
+    the map and organic searches use too (remembered, then Google Places, then OpenStreetMap's
+    google_serp_rank.geocode_city_osm as before; Welton 2026-10-30). The record says which service answered,
+    whether the town was pinned, cached or failed, and what each service said."""
+    import town_place
+    at, rec = town_place.resolve(city, state)
+    if not at:
+        return None, "the town lookup placed nothing for %s, %s (%s)" % (city, state, town_place.why(rec)), rec
+    if rec["result"] == "cached":
+        how = "%s, remembered on %s (%s, %s)" % (_SOURCE[rec["source"]], rec["cached_in"], city, state)
+    else:
+        how = "%s (%s, %s)" % (_SOURCE[rec["source"]], city, state)
+    return tuple(at), how, rec
+
+
+_SOURCE = {"google places": "Google Places, the town's own listing",
+           "openstreetmap nominatim": "the booth's town lookup"}
 
 
 def town_pin(city, state, locate=None):
@@ -73,10 +82,13 @@ def town_pin(city, state, locate=None):
     if locate is None:
         return gi.pin_note(None, "no town lookup on this path")
     try:
-        at, how = locate(city, state)
+        got = locate(city, state)
     except Exception as e:
         return gi.pin_note(None, "the town lookup failed (%s)" % type(e).__name__)
-    return gi.pin_note(at, how)
+    pin = gi.pin_note(got[0], got[1])
+    if len(got) > 2:
+        pin["lookup"] = got[2]      # which service answered, pinned / cached / failed, and what each said
+    return pin
 
 
 def check_listing_state(business, city, state, api_key, search=None, locate=None, pin_out=None):

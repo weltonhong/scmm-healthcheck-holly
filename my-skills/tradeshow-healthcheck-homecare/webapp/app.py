@@ -77,7 +77,7 @@ import importlib  # noqa: E402
 _INTEL_DIR = SCRIPTS_DIR.parents[1] / "quick-intel" / "scripts"
 _BOOTH_MODULES = ("name_matcher", "pack_identity", "map_identity", "hook_generator", "name_format",
                   "organic_names", "site_reader", "website_audit", "google_intel", "headline", "ads_words", "ads_records", "listing_confirm",
-                  "google_serp_rank", "state_check", "sheet_archive", "shared_hosts", "measured", "health_check", "pdf_generator")
+                  "town_place", "google_serp_rank", "state_check", "sheet_archive", "shared_hosts", "measured", "health_check", "pdf_generator")
 
 
 def _code_version():

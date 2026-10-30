@@ -667,7 +667,7 @@ def fetch_serp_google_api(query, city, api_key, timeout=120, latlng=None):
          of the URL-echo stub.
     """
     # latlng: search from that point (the prospect's own address, Welton 2026-10-22) instead of the town's centre.
-    coords = tuple(latlng) if latlng else geocode_city_osm(city)
+    coords = tuple(latlng) if latlng else town_coords(city)
     if not coords:
         raise RuntimeError(
             "geocode failed for %r; refusing to run an untargeted search "
@@ -937,13 +937,15 @@ def _town_answers(results):
     return kept
 
 
-def geocode_city_osm(city):
+def geocode_city_osm(city, note=None):
     # THE STATE IS SPELLED OUT, AND THE ANSWER MUST BE IN IT (Welton,
     # 2026-10-13), the rule from where-are-you serp_helpers.
     # geocode_city_osm_detail. Nominatim reads a bare two-letter code as a
     # street word: "Orange CT" came back as Orange Court, Plant City FL.
     # Byte-identical in all five booth tools; enforced by
     # tradeshow-healthcheck-homecare/scripts/test_geocode_state_guard.py.
+    # `note` (a dict, town_lookup.py) keeps what Nominatim said: the HTTP status and the reply, or the error. Without
+    # it this runs exactly as before (Welton 2026-10-30: the lookup threw away whatever it was told).
     s = city.replace(",", " ").strip()
     parts = s.rsplit(None, 1)
     state_full = US_STATE_ABBREVS.get(parts[1].upper()) if len(parts) == 2 else None
@@ -956,7 +958,13 @@ def geocode_city_osm(city):
     req = urllib.request.Request(url, headers={"User-Agent": "HealthCheckSERP/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode())
+            if note is None:
+                data = json.loads(resp.read().decode())
+            else:
+                note.update(service="openstreetmap nominatim", asked=canonical, status=getattr(resp, "status", None))
+                text = resp.read().decode()
+                note["reply"] = text[:600]
+                data = json.loads(text)
             if state_full:
                 data = [d for d in data
                         if ((d.get("address") or {}).get("state") or "").lower()
@@ -966,9 +974,28 @@ def geocode_city_osm(city):
             data = _town_answers(data)
             if data:
                 return float(data[0]["lat"]), float(data[0]["lon"])
-    except Exception:
-        pass
+    except Exception as e:
+        if note is not None:
+            note.update(service="openstreetmap nominatim", asked=canonical, status=getattr(e, "code", None),
+                        error="%s: %s" % (type(e).__name__, e))
+            try:
+                note["reply"] = e.read().decode(errors="replace")[:600]
+            except Exception:
+                pass
     return None
+
+
+def town_coords(city, note=None):
+    # The town a search is run from (Welton 2026-10-30): town_place.resolve,
+    # remembered, then Google Places, then geocode_city_osm above exactly as
+    # before. geocode_city_osm is looked up by name when it is needed, so a
+    # test that stands in for it still reaches it. `note` gets the record.
+    import town_place
+    town, state = town_place.split_town(city)
+    at, rec = town_place.resolve(town, state, osm=lambda text, n: geocode_city_osm(text, note=n))
+    if note is not None:
+        note.update(rec)
+    return at
 
 
 def run_playwright(business, domain, city, queries):
