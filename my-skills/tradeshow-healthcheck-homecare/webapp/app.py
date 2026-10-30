@@ -536,6 +536,8 @@ if st.session_state.get("scan_done"):
                 gap = results.get("review_gap")
                 if gap:
                     st.write(f"**Review gap:** {gap} {measured.reviews_word(gap)} behind")
+            else:
+                st.write("**Most-reviewed nearby listing:** " + measured.no_rival_line(results.get("google_intel")))
 
         with st.expander("Google 3-Pack", expanded=False):
             # Both points named, the same lines as the PDF (measured.map_line, Welton 2026-10-22).

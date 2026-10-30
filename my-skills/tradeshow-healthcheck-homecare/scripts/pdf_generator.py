@@ -647,6 +647,10 @@ def build_pdf(results):
             else:
                 comp_strs.append(f"{name} ({count} {measured.reviews_word(count)})")
         reviews_detail += "<br/><b>Competitors:</b> " + ", ".join(comp_strs)
+    else:
+        # Nothing named: said plainly, never left blank (measured.no_rival_line, Welton 2026-10-30). On the reviews
+        # line itself, not a line of its own: a line more made 13 recorded home health sheets two pages long.
+        reviews_detail += ". <b>Competitors:</b> " + escape(measured.no_rival_line(results.get("google_intel")))
 
     pack_results = pack.get("results") or {}
 

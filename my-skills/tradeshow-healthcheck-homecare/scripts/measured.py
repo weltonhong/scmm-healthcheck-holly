@@ -544,6 +544,18 @@ def listing_closed(results):
     return closed_word(((results or {}).get("google_intel") or {}).get("target"))
 
 
+# NO RIVAL IS SAID, NOT LEFT BLANK (Welton 2026-10-30: "make the sheet say plainly that no rival could be identified
+# rather than printing nothing or guessing"). The lookup failing is a different fact and keeps its own words.
+NO_RIVAL = "No rival could be identified nearby"
+COULDNT_CHECK_RIVALS = "Couldn't check competitors"
+
+
+def no_rival_line(intel):
+    """What the sheet says where a rival would be named, when none is: the lookup failed, or none could be identified."""
+    intel = intel or {}
+    return COULDNT_CHECK_RIVALS if intel.get("error") or intel.get("competitors_error") else NO_RIVAL
+
+
 def open_rivals(places):
     """The rivals Google does not mark closed: a closed listing is never named as a rival."""
     return [p for p in (places or []) if not closed_word(p)]

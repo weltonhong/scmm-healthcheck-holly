@@ -1139,6 +1139,10 @@ def run_health_check(business, cities, state, listing=None, phone="", pin=None):
             )
             results["review_gap"] = gap
 
+    if not results.get("top_competitor"):
+        # Nothing named: said plainly, never left blank or guessed (measured.no_rival_line, Welton 2026-10-30).
+        print_section("MOST-REVIEWED NEARBY LISTING:", [measured.no_rival_line(intel)])
+
     # Parallel: SEO (per city, also yields 3-Pack via local_pack), Website, Reviews
     # Plain language on purpose: a prospect reads this over the rep's
     # shoulder, and "SEO+3-Pack" means nothing to them.

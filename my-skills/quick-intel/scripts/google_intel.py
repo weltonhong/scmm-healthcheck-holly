@@ -347,6 +347,42 @@ def _same_place(a, b):
 
 NEARBY_MILES = 25
 
+# THEIR OWN GROUNDS ARE NEVER A RIVAL (Welton 2026-10-30). Pinned to Glendale with no listing confirmed, the cemetery
+# booth named "Holly Terrace", a section of Forest Lawn's own grounds, as the most-reviewed nearby listing, with three
+# graves on the same grounds behind it. Google marks almost none of them as inside Forest Lawn (containingPlaces), so
+# "inside" is not enough: a listing is on their grounds when it is the same place, sits at their street address in any
+# suite (Haven's Suites b and d), or lies within the trade's grounds distance of their own listing. Measured on the
+# 10-30 Forest Lawn answers: every grounds place within 671 m of the Forest Lawn listing, the real rival (Grand View)
+# 5.8 km away. Setting a real rival in the same building aside costs a name on the sheet (the next rival, or the plain
+# "no rival" line); naming their own section costs the sale, so the exclusion is the cheap direction.
+GROUNDS_M = {"cemetery": 1000.0}
+GROUNDS_M_DEFAULT = 100.0
+_UNIT = re.compile(r"\b(ste|suite|unit|apt|bldg|building|fl|floor|rm|room|space)\b.*$|#.*$")
+
+
+def _street(address):
+    """'850 n 25th st' from '850 N 25th St Ste a, Ozark, MO 65721, USA': the street line without its suite, or ''
+    when the address has no street number (a bare 'Glendale, CA 91205, USA' names no street)."""
+    first = (address or "").split(",")[0].strip()
+    if re.fullmatch(r"[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}", first.upper()):
+        return ""                         # a plus code ("4QF3+52"): a map square, not a street
+    line = " ".join(re.findall(r"[a-z0-9]+", _UNIT.sub("", first.lower())))
+    return line if re.match(r"\d", line) else ""
+
+
+def _on_grounds(c, own, radius_m):
+    """The listing of `own` whose grounds listing `c` is on, or None."""
+    for o in own:
+        if _same_place(c, o):
+            return o
+        sc = _street(c.get("address"))
+        if sc and sc == _street(o.get("address")):
+            return o
+        d = _miles(c, o)
+        if d is not None and d * 1609.344 <= radius_m:
+            return o
+    return None
+
 
 def _miles(a, b):
     """Great-circle miles between two Places locations, or None when either is missing."""
@@ -527,6 +563,14 @@ def main():
         for p in (target_results if isinstance(target_results, list) else []) + nearby:
             if p.get("place_id") and _could_be_them(args.business, p.get("name") or "", args.state):
                 maybe_theirs.add(p["place_id"])
+    # Their own grounds: their confirmed listing, or (unconfirmed) every listing that could be theirs. Confirmed too
+    # (2026-10-30, held for Welton as its own commit): with Forest Lawn confirmed by phone, Holly Terrace and a grave
+    # still made the rival list, and the PDF prints the three most-reviewed rivals.
+    own_grounds = ([target] if isinstance(target, dict) and target.get("place_id") else
+                   [p for p in (target_results if isinstance(target_results, list) else []) + nearby
+                    if p.get("place_id") in maybe_theirs])
+    grounds_m = GROUNDS_M.get(vertical_key, GROUNDS_M_DEFAULT)
+    on_grounds = []
     if isinstance(competitor_results, list):
         for c in nearby:
             cname = c.get("name", "") or ""
@@ -538,6 +582,10 @@ def main():
             if not target and nearby_from != "their listing" and (
                     _could_be_them(args.business, cname, args.state) or set(c.get("inside") or []) & maybe_theirs):
                 cant_tell.append(cname)
+                continue
+            o = _on_grounds(c, own_grounds, grounds_m)
+            if o is not None:
+                on_grounds.append({"name": cname, "theirs": o.get("name") or ""})
                 continue
             if not matches_vertical(c, config):
                 continue
@@ -566,6 +614,10 @@ def main():
         # word with the name and their listing could not be confirmed (Welton 2026-10-29).
         "nearby_from": nearby_from,
         "cant_tell_listings": cant_tell,
+        # Nearby listings left off the rival list because they sit on their own grounds, each with the listing of
+        # theirs it sits beside (Welton 2026-10-30).
+        "on_their_grounds": on_grounds,
+        "grounds_m": grounds_m,
         # What was sent to Google (the words, and the locationBias when pinned) and its whole answer, for each
         # Places search.
         "places_raw": _RAW,
