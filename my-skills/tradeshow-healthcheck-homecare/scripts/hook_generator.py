@@ -34,138 +34,58 @@ VERTICAL_LABEL = {
 # Why-it-matters templates per vertical and surface (3-Pack vs SEO).
 # Phrased in the vertical's own language so setters sound like insiders.
 WHY_3PACK = {
-    "funeral home": (
-        "At-need decisions are same-day. The first listing on the map wins "
-        "the first call, and every family that calls {winner} instead of you "
-        "is a case and an arrangement conference you never get to have."
-    ),
-    "cemetery": (
-        "When families tour, they tour what they find on the map first. "
-        "{winner} is getting those family tours and pre-need conversations. "
-        "You're not even in the conversation for plots, niches, or columbarium space."
-    ),
-    "home care": (
-        "The map pack drives roughly 60% of local clicks. Families decide "
-        "before they even pick up the phone, and {winner} is the one "
-        "booking in-home assessments and billable hours -- live-in, "
-        "overnight, the whole book."
-    ),
+    # What a setter may add after the counted sentence (Welton 2026-10-22). Gone: "roughly 60% of local clicks", "the
+    # first listing on the map wins the first call", "{winner} is getting those tours / booking those billable hours",
+    # and searches never run ("live-in, overnight, the whole book"): none was measured, and no statistic is on an
+    # approved list (ruling 6). A vertical's plain context stays.
+    "funeral home": "At-need decisions are same-day.",
+    "cemetery": "When families tour, they tour what they find on the map first.",
+    "home care": "",
     "home health": (
         "When a family leaves the hospital with a list of agencies, "
-        "they look each one up before they call. {winner} shows up in "
-        "the map. You don't. That decides who gets the call before "
-        "anyone picks up the phone."
+        "they look each one up before they call."
     ),
-    "hospice": (
-        "Referral sources and families both check the map first. "
-        "{winner} is showing up. You're not."
-    ),
-    "assisted living": (
-        "Adult children tour what they find on the map first. {winner} "
-        "is getting those tours and those inquiry calls."
-    ),
+    "hospice": "Referral sources and families both check the map first.",
+    "assisted living": "Adult children tour what they find on the map first.",
 }
 
 WHY_SEO = {
+    # Gone (2026-10-22): "Page two gets less than 1% of clicks", "every family typing these terms is calling them
+    # instead of you", "every pre-need family searching today is landing on them", "referral starts going somewhere
+    # else", and "the searches families are actually typing" (no search volume was measured: "the searches I ran").
     "funeral home": (
         "When a family has just lost someone, they research before they "
-        "call. They read reviews, they visit websites, they decide who to "
-        "trust before anyone picks up the phone. {winner} is on page one "
-        "for the searches families in your service area are actually typing. "
-        "You're not."
+        "call. {winner} is on page one for the searches I ran. You're not."
     ),
-    "cemetery": (
-        "These are high commercial intent searches -- families are actively "
-        "shopping burial plots and cremation niches right now. {winner} is "
-        "on page one for those searches. Page two gets less than 1% of clicks, "
-        "so every pre-need family searching today is landing on them."
-    ),
-    "home care": (
-        "Page two gets less than 1% of clicks, and the searches families "
-        "type are how live-in, overnight, and high-billable-hour cases "
-        "come in. {winner} is on page one. You're not. Every family typing "
-        "these terms is calling them instead of you."
-    ),
+    "cemetery": "{winner} is on page one for the searches I ran. You're not.",
+    "home care": "{winner} is on page one for the searches I ran. You're not.",
     "home health": (
-        "Families pick fast after a discharge. They call whoever they "
-        "can find and check out. {winner} is on page one. You aren't. "
-        "Those are referral starts going somewhere else."
+        "Families pick fast after a discharge. {winner} is on page one. "
+        "You aren't."
     ),
     "hospice": (
-        "Referral sources Google fast. {winner} is on page one for hospice "
-        "searches in your service area. You're not."
+        "Referral sources Google fast. {winner} is on page one for the hospice "
+        "searches I ran. You're not."
     ),
     "assisted living": (
         "Adult children shop online before they tour. {winner} is on page "
-        "one for the searches families are actually running. You're not."
+        "one for the searches I ran. You're not."
     ),
 }
 
 # Fallback "why it matters" when we have no top competitor to reference
 # (e.g. neither prospect nor competitors rank in the 3-Pack).
 WHY_3PACK_NO_WINNER = {
-    "funeral home": (
-        "At-need decisions are same-day. Families in your service area are "
-        "looking at the map right now, and neither you nor your direct "
-        "competitors are in the three-pack. Whoever fixes this first wins "
-        "the first calls."
-    ),
-    "cemetery": (
-        "Families tour what they find on the map first. Right now, nobody "
-        "in your area is in the three-pack for burial plots, niches, or "
-        "columbarium space. Whoever gets there first owns the pre-need "
-        "conversation."
-    ),
-    "home care": (
-        "Map pack drives roughly 60% of local clicks, and right now "
-        "neither you nor your direct competitors are in it. Families "
-        "looking for live-in and overnight caregivers are going to "
-        "whoever fills that slot first."
-    ),
-    "home health": (
-        "Right now nobody in your service area is in the map at all. "
-        "The first agency to fix that is the one families see when "
-        "they're handed a list."
-    ),
-    "hospice": (
-        "Referral sources check the map first. Nobody in your area is "
-        "showing up there right now."
-    ),
-    "assisted living": (
-        "Families tour what they find on the map first. Nobody in your "
-        "area is in the three-pack right now."
-    ),
+    # NO "NOBODY" LINE (Welton 2026-10-22, P13). It said "neither you nor your direct competitors are in the
+    # three-pack" when no rival SURVIVED the filters (the state check, a Places error, the cap). Since 2026-10-21 a
+    # search counts only when its map had cards on it, so somebody was always there. Empty: no line.
+    v: "" for v in ("funeral home", "cemetery", "home care", "home health", "hospice", "assisted living")
 }
 
 WHY_SEO_NO_WINNER = {
-    "funeral home": (
-        "When a family has just lost someone, they research before they "
-        "call. They read reviews, they visit websites, they decide who to "
-        "trust before anyone picks up the phone. Right now your direct "
-        "competitors aren't on page one either -- this is a wide-open "
-        "window to own the searches families are already typing."
-    ),
-    "cemetery": (
-        "High commercial intent searches for plots and niches, and nobody "
-        "in your area is on page one. This is yours to take."
-    ),
-    "home care": (
-        "Page two gets less than 1% of clicks, and right now nobody in "
-        "your area is showing up on page one for live-in or overnight "
-        "searches. Whoever fixes this first books those billable hours."
-    ),
-    "home health": (
-        "Right now nobody in your area is showing up on page one. "
-        "That's a wide open window for referral starts."
-    ),
-    "hospice": (
-        "Referral sources Google fast. Nobody in your area is on page one "
-        "right now."
-    ),
-    "assisted living": (
-        "Adult children shop online first. Nobody in your area is on "
-        "page one right now."
-    ),
+    # NO "NOBODY" LINE (P13): a page one always has somebody on it; "nobody in your area" meant nobody survived the
+    # filters. Empty: no line.
+    v: "" for v in ("funeral home", "cemetery", "home care", "home health", "hospice", "assisted living")
 }
 
 # --------------------------------------------------------------------------- #
@@ -234,6 +154,12 @@ def map_read(row):
     2026-10-21 carry no pack_present and keep the meaning they were built with
     (past cards are not corrected, Welton 2026-10-14)."""
     if row.get("error"):
+        return False
+    if row.get("maybe_rank"):
+        # A card that may be theirs and could not be confirmed (A5): neither in the pack nor missing from it.
+        return False
+    if "pack_present" not in row and not [t for t in (row.get("top_3") or []) if t]:
+        # Saved before 2026-10-21 with no map card at all (P14): a rebuilt card read this as "Not found".
         return False
     return row.get("pack_present", True) is True
 
@@ -404,8 +330,9 @@ def drop_named_competitor(reason, why_template, winner):
     return reason, " ".join(keep)
 
 # Assumptive close -- used at the end of every hook.
+# Quick Intel SKILL.md rule 5 wins: never "I'd love to show you" (Welton 2026-10-22, ruling 7).
 CLOSE = (
-    "I'd love to show you what's possible here. Tuesday at 10 or "
+    "Could I walk you through what I found? Tuesday at 10 or "
     "Wednesday at 2 -- which works better?"
 )
 
@@ -430,27 +357,10 @@ SLIPPAGE_PAIN_NOUN = {
 # "Most" tier why-it-matters, vertical-specific. Used after the tiered
 # summary sentence when the prospect is in the pack for 68%+ of searches.
 WHY_3PACK_MOST = {
-    "funeral home": (
-        "Rank #1 on the map gets the first call. Rank #2 and #3 fight for "
-        "the rest. At-need decisions are same-day, so every search where "
-        "you're not #1 is a case potentially going to a competitor."
-    ),
-    "cemetery": (
-        "Rank #1 on the map drives the family tour. Every high-intent "
-        "search where you slip to #2 or #3 is a pre-need conversation you "
-        "don't get to have."
-    ),
-    "home care": (
-        "The map pack drives roughly 60% of local clicks, and rank #1 "
-        "captures most of them. Slippage on live-in and overnight "
-        "searches means high-billable-hour cases going to whoever's "
-        "ranked above you."
-    ),
-    "home health": (
-        "Families and referral partners check you out before they "
-        "call. Being second or third on skilled nursing searches costs "
-        "you referral starts."
-    ),
+    # Gone (2026-10-22): "rank #1 gets the first call", "every search where you're not #1 is a case potentially going
+    # to a competitor", "roughly 60% of local clicks", "slippage on live-in and overnight searches" (never run). The
+    # most-tier summary names a real search where they are not first; nothing is added after it.
+    v: "" for v in ("funeral home", "cemetery", "home care", "home health")
 }
 
 
@@ -921,7 +831,8 @@ def _scan_phrase(cities):
         return ""
     home = cities[0]
     if len(cities) >= 3:
-        return f"across {home} and the two closest cities you serve"
+        # Straight-line nearest towns, never "cities you serve": the service area was not measured (P27).
+        return f"across {home} and the two closest towns"
     if len(cities) == 2:
         return f"in {home} and {cities[1]}"
     return f"in {home}"
@@ -2307,9 +2218,6 @@ def build_3pack_hook(owner_name, company, vertical, home_city, state,
         )
 
     # --- Tiered summary (the "because" statement for the hook) ------------
-    slip_kw = SLIPPAGE_KEYWORD.get(vertical, "'cremation'")
-    slip_noun = SLIPPAGE_PAIN_NOUN.get(vertical, "cases")
-
     if total == 0:
         # Every 3-Pack search in this section FAILED or read no map. We have no
         # measurement, so we make no claim: no hook at all. This used to fall through to
@@ -2318,12 +2226,11 @@ def build_3pack_hook(owner_name, company, vertical, home_city, state,
 
     if in_pack == 0:
         # Zero tier
-        base = (
-            f"you're not in the three-pack for any of the {total} searches "
-            f"{family_phrase} are running"
-        )
+        base = f"you're not in the three-pack for any of the {total} searches I ran"
         if winner:
-            summary = f"{base}. {winner} is showing up in those packs"
+            # The count, never "showing up in those packs" off one pack of twelve (P23).
+            summary = (f"{base}. {winner} is in {n_win} of them"
+                       if (n_win := count_3pack_appearances(scored_rows, winner)) else base)
             why = WHY_3PACK.get(vertical, WHY_3PACK["home care"]).format(winner=winner)
         else:
             summary = base
@@ -2332,7 +2239,8 @@ def build_3pack_hook(owner_name, company, vertical, home_city, state,
         # Few tier
         base = f"you're only in the three-pack for {in_pack} of {total} searches"
         if winner:
-            summary = f"{base}. {winner} is showing up in more of them"
+            summary = (f"{base}. {winner} is in {n_win} of them"
+                       if (n_win := count_3pack_appearances(scored_rows, winner)) else base)
             why = WHY_3PACK.get(vertical, WHY_3PACK["home care"]).format(winner=winner)
         else:
             summary = base
@@ -2343,11 +2251,11 @@ def build_3pack_hook(owner_name, company, vertical, home_city, state,
         missed = total - in_pack
         base = (
             f"you're in the three-pack for {in_pack} of the {total} "
-            f"searches {family_phrase} are running, but missing on "
-            f"the other {missed}"
+            f"searches I ran, but missing on the other {missed}"
         )
         if winner:
-            summary = f"{base}. {winner} is showing up in more of them"
+            summary = (f"{base}. {winner} is in {n_win} of them"
+                       if (n_win := count_3pack_appearances(scored_rows, winner)) else base)
             why = WHY_3PACK.get(vertical, WHY_3PACK["home care"]).format(winner=winner)
         else:
             summary = base
@@ -2356,12 +2264,20 @@ def build_3pack_hook(owner_name, company, vertical, home_city, state,
         # Most tier (pct >= 0.68). Slippage framing regardless of winner.
         # Bug 6: replace "most of the {total}" with literal {in_pack} of
         # {total} so setters quote real numbers on the call.
+        # Name a search we RAN where they are not first, or no line (P21, P22): the old line quoted a keyword
+        # never searched ("'live-in'") and claimed slippage without checking a rank below #1. A funeral home's line
+        # never leads with cremation when another search will do (rules/prospect-copy.md).
+        not_first = [r for r in scored_rows if not r.get("rank") or r["rank"] > 1]
+        if not not_first:
+            return None
+        not_first.sort(key=lambda r: "cremation" in (r.get("keyword") or "").lower())
+        r0 = not_first[0]
+        where = (f"#{r0['rank']}" if r0.get("rank") else "not in the three-pack")
         summary = (
-            f"you're in the three-pack for {in_pack} of the {total} "
-            f"searches, but you're not always ranked first -- slippage "
-            f"on high-intent keywords like {slip_kw} costs {slip_noun}"
+            f"you're in the three-pack for {in_pack} of the {total} searches I ran, "
+            f"but for '{r0['keyword']}' you're {where}"
         )
-        why = WHY_3PACK_MOST.get(vertical, WHY_3PACK_MOST["funeral home"])
+        why = WHY_3PACK_MOST.get(vertical, "")
 
     # NEVER SAY NOBODY WHEN THE PROSPECT RANKS (Welton, 2026-09-21). The
     # NO_WINNER line says nobody is in the map. It was also reached when the
@@ -2370,8 +2286,8 @@ def build_3pack_hook(owner_name, company, vertical, home_city, state,
     # service area is in the map at all." No existing wording fits "you rank,
     # no rival named", so the section gets no hook. One guard here, after
     # every tier, so no branch -- present or future -- can reach it.
-    if in_pack >= 1 and why == WHY_3PACK_NO_WINNER.get(
-            vertical, WHY_3PACK_NO_WINNER["home care"]):
+    if in_pack >= 1 and not winner and pct < 0.68:
+        # (Tested on the rival itself, not on the line's text, since 2026-10-22: several lines are now empty.)
         return None
 
     # ONLY SAY WHAT WE COUNTED (2026-09-22). Rule 2 first: the named
@@ -2393,7 +2309,7 @@ def build_3pack_hook(owner_name, company, vertical, home_city, state,
         f"results for {vlabel} {phrase}, and {summary}."
     )
     intro = f"Hi {first}, this is {setter} with {brand}."
-    return f"{intro} {reason} {why} {CLOSE}"
+    return " ".join(x for x in (intro, reason, why, CLOSE) if x)
 
 
 def build_seo_hook(owner_name, company, vertical, home_city, state,
@@ -2475,16 +2391,11 @@ def build_seo_hook(owner_name, company, vertical, home_city, state,
         home_city=home_city, vertical=vertical,
     ) or f"{vlabel.split()[0] if vlabel else 'care'} {home_city}"
 
+    # "I ran searches like X", never "the terms families are actually typing": no search volume is measured (P26).
     if n_cities == 1:
-        typing_phrase = (
-            f"I ran the search terms families in {home_city} are actually "
-            f"typing -- things like '{example}'"
-        )
+        typing_phrase = f"I ran searches like '{example}' in {home_city}"
     else:
-        typing_phrase = (
-            f"I ran the search terms families in your service area are "
-            f"actually typing -- things like '{example}' -- {phrase}"
-        )
+        typing_phrase = f"I ran searches like '{example}' {phrase}"
     family_phrase = (
         "families in your service area" if n_cities > 1
         else f"families in {home_city}"
@@ -2533,17 +2444,14 @@ def build_seo_hook(owner_name, company, vertical, home_city, state,
         # prospect's own measured position and stays. Dropping the clause
         # leaves the existing no-competitor form of the sentence.
         competitor_clause = ""
+        # Gone (P28): "at-need calls shift to whoever shows up next" and "the paid and at-need side", said on every
+        # vertical and measured on none.
         reason = (
             f"The reason I'm calling is that {typing_phrase}. {company} "
-            f"is ranked #1 on every single one of them. You own the "
-            f"searches {family_phrase} are running. The question is "
-            f"whether anyone's watching this position closely -- because "
-            f"when a #1 slip happens, at-need calls shift to whoever "
-            f"shows up next{competitor_clause}."
+            f"is ranked #1 on every single one of them{competitor_clause}."
         )
         close_variant = (
-            "Quick conversation about what you're doing to defend this "
-            "and what's possible on the paid and at-need side. "
+            "Quick conversation about what you're doing to keep it there? "
             "Tuesday at 10 or Wednesday at 2 -- which works better?"
         )
         intro = f"Hi {first}, this is {setter} with {brand}."
@@ -2567,38 +2475,30 @@ def build_seo_hook(owner_name, company, vertical, home_city, state,
         else:
             gap = ""
         # Bug 6: name the actual top-3 count rather than "most of"
+        # Gone (P29): "this is strong", "ranks 1 through 3 capture the vast majority of clicks", "where the cases
+        # quietly walk to a competitor".
         reason = (
             f"The reason I'm calling is that {typing_phrase}. {company} is "
-            f"ranked in the top 3 for {top3_count} of the {total} searches "
-            f"{family_phrase} are running -- this is strong.{gap}"
+            f"ranked in the top 3 for {top3_count} of the {total} searches I ran.{gap}"
         )
-        why = (
-            "Ranks 1 through 3 capture the vast majority of clicks on any "
-            "given search. Slipping to rank 4 or 5 on a high-intent term is "
-            "where the cases quietly walk to a competitor."
-        )
+        why = ""
     elif tier == "mixed":
-        winner_clause = (
-            f" {winner} is where families actually click." if winner else ""
-        )
+        # "Across the board" at 68% and "rank 4-10 gets a fraction of the clicks" / "where families actually click"
+        # are gone (P25, ruling 6): the counts are said as counts.
         reason = (
             f"The reason I'm calling is that {typing_phrase}. {company} is on "
-            f"page one across the board, but only ranked in the top 3 for "
-            f"{top3_count} of {total}. Rank 4-10 gets a fraction of the "
-            f"clicks of the top spots.{winner_clause}"
+            f"page one for {page1_count} of {total}, but only ranked in the top 3 for "
+            f"{top3_count} of {total}."
         )
         why = (
             WHY_SEO.get(vertical, WHY_SEO["home care"]).format(winner=winner)
             if winner else WHY_SEO_NO_WINNER.get(vertical, WHY_SEO_NO_WINNER["home care"])
         )
     elif tier == "weak_page1":
-        winner_clause = (
-            f" {winner} is holding those top spots." if winner else ""
-        )
         reason = (
             f"The reason I'm calling is that {typing_phrase}. {company} is on "
             f"page one for {page1_count} of {total} searches, but you're not "
-            f"ranked in the top 3 for any of them.{winner_clause}"
+            f"ranked in the top 3 for any of them."
         )
         why = (
             WHY_SEO.get(vertical, WHY_SEO["home care"]).format(winner=winner)
@@ -2644,8 +2544,8 @@ def build_seo_hook(owner_name, company, vertical, home_city, state,
     # NO_WINNER line says nobody is on page one. The mixed, weak_page1 and
     # not_page1 tiers all reached it with the prospect ON page one and no
     # rival named. No existing wording fits, so the section gets no hook.
-    if page1_count >= 1 and why == WHY_SEO_NO_WINNER.get(
-            vertical, WHY_SEO_NO_WINNER["home care"]):
+    if page1_count >= 1 and not winner and tier not in ("dominating", "defending_all_rank_1"):
+        # (Tested on the rival itself since 2026-10-22, not on the line's text: several lines are now empty.)
         return None
 
     # ONLY SAY WHAT WE COUNTED (2026-09-22). Rule 2: never name the prospect
@@ -2678,4 +2578,4 @@ def build_seo_hook(owner_name, company, vertical, home_city, state,
             reason, WHY_SEO.get(vertical, WHY_SEO["home care"]), winner)
 
     intro = f"Hi {first}, this is {setter} with {brand}."
-    return f"{intro} {reason} {why} {CLOSE}"
+    return " ".join(x for x in (intro, reason, why, CLOSE) if x)
