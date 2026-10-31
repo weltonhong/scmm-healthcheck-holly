@@ -237,6 +237,10 @@ def organic_unread(rank, results, their_site):
         return {"organic_error": "no website for the business to compare results with", "organic_maybe": None}
     if rank:
         return {"organic_error": None, "organic_maybe": None}
+    hidden = [r.get("position") for r in results or [] if r.get("hidden")]
+    if hidden:
+        return {"organic_error": "a page-one result hid its web address, so whether they are on page one is unknown",
+                "organic_maybe": None}
     maybe = next((r.get("position") for r in results or []
                   if page_verdict(r.get("url") or r.get("domain"), their_site) == CANT_TELL), None)
     return {"organic_error": ("a page on their company's website ranks; could not confirm it is theirs"
@@ -666,3 +670,21 @@ def double_read(run_one, key, *point, split=SPLIT_READS):
         return label, {"query": next((r.get("query") for r in rows if r and r.get("query")), None),
                        "rank": None, "top_3": [], "ads": [], "error": split % len(rows), "reads": len(rows)}
     return label, dict(row, reads=len(rows))
+
+# HIDDEN LINKS (Welton 2026-10-31). The one rule for every booth tool: a result's site from its link, or, when Google
+# wrapped the link in a redirect, from the address it prints. Receipt ops/receipts/20261031T153425_booth-proving-
+# search-hidden-links.txt (6 of 9 page-one results wrapped).
+_SHOWN = re.compile(r"^\s*https?://([^\s/›»>]+)", re.I)
+
+
+def result_site(r):
+    """(host, hidden) for one organic result of the structured answer."""
+    url = r.get("url") or ""
+    dom = (r.get("domain") or "").lower().replace("www.", "").strip()
+    wrapped = url.startswith("/goto?") or "/goto?url=" in url or (not dom and not url.startswith("http"))
+    if not wrapped:
+        return dom or (re.sub(r"^https?://", "", url).split("/")[0].lower().replace("www.", "")), False
+    m = _SHOWN.match(r.get("displayed_url") or "")
+    if m:
+        return m.group(1).lower().replace("www.", ""), False
+    return "", True

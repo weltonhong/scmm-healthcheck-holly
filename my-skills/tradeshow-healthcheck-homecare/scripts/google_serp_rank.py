@@ -714,12 +714,16 @@ def organic_from_api(d, business_name, domain):
             continue
         title = r.get("title") or ""
         url = r.get("url") or ""
-        host = _host(r.get("domain"))
+        # HIDDEN LINKS (Welton 2026-10-31): Google now wraps many results in a redirect ("/goto?url=..."), and the
+        # answer then carries no domain. The address Google PRINTS on the result (displayed_url) is the real site;
+        # with no web address printed there ("4.4K+ followers") the site is unknown: hidden, never a miss
+        # (measured.organic_unread turns a miss on such a page into couldn't check).
+        host, hidden = measured.result_site(r)
         results.append({"position": pos, "title": title,
-                        "url": url, "domain": host})
+                        "url": url, "domain": host, **({"hidden": True} if hidden else {})})
         # Theirs only when it is on their own website; a directory page that names them is somebody
         # else's result (the pre-call rule of 2026-10-16, scripts/measured.py on_their_site).
-        matched = measured.page_verdict(url or host, domain) == measured.THEM
+        matched = (not hidden) and measured.page_verdict(host or url, domain) == measured.THEM
         if matched and rank is None:
             rank = pos
     return rank, results
