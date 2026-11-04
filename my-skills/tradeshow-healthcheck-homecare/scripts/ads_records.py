@@ -11,6 +11,16 @@ show no ads for their website in the last 30 days"). A business advertising to a
 invisible to it. A website on a host many businesses share (a franchise's or Dignity Memorial's site, Facebook,
 shared_hosts.py) gives records that are not theirs alone: "Couldn't tell". Not graded.
 
+COUNT WHAT THE PAGE LISTS, NEVER THE COUNTER ALONE (Welton 2026-11-04). On 11-04 the page for collierhomecare.com
+listed 8 ads by its verified advertiser while its own counter read "0 ads", and this file trusted the counter: it
+would have printed "no ads" for a business that advertises (receipt ops/receipts/20261104T111440_homecare-email6-ads-
+record-probe.txt). Now:
+  ran ads   the page lists one or more ads, whatever the counter says;
+  no ads    ONLY when the page loaded (the Last 30 days filter is shown), the counter says 0, no ad is listed AND
+            Google's own empty-list message ("No ads found") is on the page;
+  anything else (the page or the list did not load, a counter above 0 with no list, a layout we do not know):
+            no claim at all, "Couldn't check".
+
 identical copies live in all five booth tools' scripts/ folders; test_booth_ads_records.py fails if any copy drifts.
 """
 import os
@@ -23,6 +33,20 @@ TRANSPARENCY = "https://adstransparency.google.com/?region=US&domain=%s&preset-d
 SCRAPINGBEE = "https://app.scrapingbee.com/api/v1/"
 COUNT = re.compile(r'class="ads-count[^"]*"[^>]*>\s*(~?)\s*([\d.,]+)\s*([KkM]?)\s+ads?\s*<')
 READ, NONE_ON_RECORD, SHARED, NO_WEBSITE, FAILED = "read", "none", "shared", "no_website", "failed"
+LISTED_AD = "<creative-preview"                   # one per ad the page lists
+EMPTY_LIST = re.compile(r'class="empty-results[^"]*"')
+EMPTY_WORDS = "No ads found"
+PERIOD = "Last 30 days"
+
+
+def listed(html):
+    """How many ads the page itself lists (a page may list fewer than it has: a lower bound)."""
+    return (html or "").count(LISTED_AD)
+
+
+def empty_list_shown(html):
+    """Google's own empty-list message is on the page."""
+    return bool(EMPTY_LIST.search(html or "")) and EMPTY_WORDS in (html or "")
 
 
 def domain_of(website):
@@ -75,12 +99,21 @@ def check(website, api_key=None, fetch=None):
     except Exception as e:                                       # noqa: BLE001  a failed read is couldn't check
         rec["error"] = str(e)[:200]
         return rec
-    n = read_count(body) if status == 200 else None
-    if n is None:
-        rec["error"] = "HTTP %s, %s" % (status, "no ad count on the page" if status == 200 else (body or "")[:160])
+    if status != 200:
+        rec["error"] = "HTTP %s, %s" % (status, (body or "")[:160])
         return rec
-    rec["ads_30d"] = n
-    rec["status"] = READ if n > 0 else NONE_ON_RECORD
+    n, k = read_count(body), listed(body)
+    rec["listed"], rec["counter"] = k, n
+    if k > 0:                                    # ads on the page: they ran ads, even if the counter says 0
+        rec["ads_30d"] = max(k, n or 0)
+        rec["status"] = READ
+    elif n == 0 and empty_list_shown(body) and PERIOD in body:
+        rec["ads_30d"] = 0
+        rec["status"] = NONE_ON_RECORD
+    else:                                        # the page or the list did not load, or it is unclear: no claim
+        rec["error"] = "no claim: counter %s, %d ad(s) listed, empty-list message %s, period %s" % (
+            "missing" if n is None else n, k, "shown" if empty_list_shown(body) else "missing",
+            "shown" if PERIOD in body else "missing")
     return rec
 
 
