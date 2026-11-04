@@ -533,7 +533,7 @@ def ddg_html_search(query):
     return results
 
 
-def check_seo_per_city(business, website, cities, state, own_cids=(), listings=(), door=None):
+def check_seo_per_city(business, website, cities, state, own_cids=(), listings=(), door=None, phones=(), street=""):
     """For each city, run SERP rank script with one query 'home care {city} {state}'.
 
     Each city uses its own UULE so the result is geo-targeted to that city.
@@ -561,6 +561,10 @@ def check_seo_per_city(business, website, cities, state, own_cids=(), listings=(
                     "--city", f"{city} {state}",
                     "--queries", query,
                     "--cids", ",".join(own_cids),
+                    # The phone and street on their own listing: whose page ranks on a shared franchise website
+                    # (measured.franchise_rank, Welton 2026-11-04).
+                    "--phones", ",".join(p for p in phones if p),
+                    "--street", street or "",
                     *(["--latlng", "%s,%s" % tuple(latlng)] if latlng else []),
                 ],
                 capture_output=True, text=True, timeout=120,
@@ -1156,7 +1160,7 @@ def run_health_check(business, cities, state, listing=None, phone="", pin=None):
     with ThreadPoolExecutor(max_workers=4) as ex:
         futures = {
             ex.submit(ads_records.check, website): "ads_records",
-            ex.submit(check_seo_per_city, business, website, cities, state, own_cids, intel.get("nearby_listings") or [], measured.door_point(target) if known else None): "seo",
+            ex.submit(check_seo_per_city, business, website, cities, state, own_cids, intel.get("nearby_listings") or [], measured.door_point(target) if known else None, phones=[target.get("phone")] if known else (), street=target.get("address") if known else ""): "seo",
             ex.submit(check_website, website): "website",
             ex.submit(check_reviews_snapshot, business, home_city, state, intel): "reviews",
         }

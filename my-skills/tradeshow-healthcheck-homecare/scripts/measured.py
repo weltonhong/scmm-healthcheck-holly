@@ -241,10 +241,118 @@ def organic_unread(rank, results, their_site):
     if hidden:
         return {"organic_error": "a page-one result hid its web address, so whether they are on page one is unknown",
                 "organic_maybe": None}
+    if company_wide(their_site):
+        # A shared franchise website: only the page's phone says whose page it is (franchise_rank below). Any page of
+        # their site on page one that the phone did not confirm may be theirs: never "not on page one".
+        maybe = next((r.get("position") for r in results or []
+                      if on_their_site(r.get("domain") or r.get("url"), their_site) and r.get("identity") != THEM),
+                     None)
+        return {"organic_error": ("a page on their company's website ranks; its phone did not confirm it is theirs"
+                                  if maybe else None), "organic_maybe": maybe}
     maybe = next((r.get("position") for r in results or []
                   if page_verdict(r.get("url") or r.get("domain"), their_site) == CANT_TELL), None)
     return {"organic_error": ("a page on their company's website ranks; could not confirm it is theirs"
                               if maybe else None), "organic_maybe": maybe}
+
+
+# ------------------------------------ a shared franchise website: the page's phone decides (Welton 2026-11-04) --
+# On a franchise's company-wide website (shared_hosts.py) the web address cannot say whose page ranks: on 8/19 path
+# matching hid real rankings (one franchisee owns several paths, one page lives at several aliases). On 11-04 the
+# booth read Assisting Hands - Boston Northwest's own page, #8 for "home care Lexington MA", as "not on page one":
+# it judged the result by its host alone, found no path, and nothing then said "couldn't tell". Now the first result
+# on their shared site is opened once and the phone numbers on it are compared with the phone on their own Google
+# listing, and its street with the street on the listing:
+#   their listing's phone, or their listing's street (house number, then the street's first word), is on the page,
+#   and the page is not a list of many offices                                            theirs, at that position
+#   anything else: other phones, no phone, the page could not be read, no listing         couldn't tell, row left off
+# The street is the Quick Intel standard of 2026-10-22: Assisting Hands - Boston Northwest's own page shows other
+# phone numbers than its Google listing ((781) 739-0313 on the listing; 781-315-6700 and 781-514-6172 on the page)
+# and its listing's street, "450 Bedford Street, STE 2200, Lexington", in the page's own business details.
+# The first result on their site decides: a page above theirs that the phone cannot place may be theirs too (the
+# Quick Intel rule of 2026-10-22, serp_helpers.shared_site_rank). The web address is never evidence either way.
+_LOOSE_PHONE = re.compile(r"(?<!\d)\(?(\d{3})\)?[\s.\-]*(\d{3})[\s.\-]*(\d{4})(?!\d)")
+_SHOWN_PHONE = re.compile(r"(?<!\d)(?:\(([2-9]\d{2})\)\s*|([2-9]\d{2})[\s.\-])([2-9]\d{2})[\s.\-](\d{4})(?!\d)")
+_TEL = re.compile(r'tel:\s*([+0-9().\-\s%]+)', re.I)
+MANY_OFFICES = 5          # a page showing more than this many phone numbers is a list of offices, not one office's page
+
+
+def phone10(v):
+    d = re.sub(r"\D", "", v or "")
+    if len(d) == 11 and d.startswith("1"):
+        d = d[1:]
+    return d if len(d) == 10 else ""
+
+
+_DIRECTION = r"(?:[nsew]\.?\s+|north\s+|south\s+|east\s+|west\s+)?"
+
+
+def street_key(street):
+    """'450 Bedford St Ste 2200, Lexington, MA' -> ('450', 'bedford'): the house number and the street's first word."""
+    m = re.match(r"\s*(\d+[a-z]?)\s+" + _DIRECTION + r"([a-z0-9]+)", (street or "").lower())
+    return m.groups() if m else None
+
+
+def page_identity(html, phones, street=""):
+    """THEM when the page shows one of their phones or their street and is not a list of many offices; CANT_TELL
+    otherwise."""
+    mine = {phone10(p) for p in phones or ()} - {""}
+    k = street_key(street)
+    if not html or not (mine or k):
+        return CANT_TELL
+    text = re.sub(r"<[^>]+>", " ", html)
+    tel = {phone10(urllib.parse.unquote(t)) for t in _TEL.findall(html)} - {""}
+    by_phone = bool(mine & ({"".join(m.groups()) for m in _LOOSE_PHONE.finditer(text)} | tel))
+    by_street = bool(k) and bool(re.search(r"(?<![\w-])%s\s+%s%s\b" % (re.escape(k[0]), _DIRECTION, re.escape(k[1])),
+                                           text.lower()))
+    if not (by_phone or by_street):
+        return CANT_TELL
+    shown = {"".join(g for g in m.groups() if g) for m in _SHOWN_PHONE.finditer(text)} | tel
+    return CANT_TELL if len(shown) > MANY_OFFICES else THEM
+
+
+def fetch_page(url, timeout=20):
+    """The page's HTML, or None when it could not be read (an error, a block page, a stub). A plain GET, no cost."""
+    import requests
+    try:
+        r = requests.get(url, timeout=timeout, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/124.0 Safari/537.36"})
+    except Exception:                                            # noqa: BLE001  unread is couldn't tell
+        return None
+    h = r.text or ""
+    low = h[:5000].lower()
+    if r.status_code != 200 or len(h) < 2000 or "<title>attention required! | cloudflare" in low \
+            or "<title>just a moment" in low:
+        return None
+    return h
+
+
+def page_url(r):
+    """The address to open for one result: its link, or the address inside Google's redirect."""
+    url = r.get("url") or ""
+    if "/goto?" in url or url.startswith("/url?"):
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        url = (q.get("url") or q.get("q") or [""])[0]
+    return url if url.startswith("http") else ""
+
+
+def franchise_rank(results, their_site, phones, fetch=None, cache=None, street=""):
+    """The rank on a shared franchise website, by the phone or street on the page. Marks the first page-one result on their
+    site with r["identity"] (THEM or CANT_TELL) and returns its position when it is theirs, else None. None for a
+    site that is not company-wide (the whole-domain rule decides there)."""
+    if not company_wide(their_site):
+        return None
+    fetch = fetch or fetch_page
+    cache = {} if cache is None else cache
+    for r in sorted((r for r in results or [] if r.get("position")), key=lambda r: r["position"]):
+        if r.get("hidden") or not on_their_site(r.get("domain") or r.get("url"), their_site):
+            continue
+        url = page_url(r)
+        if url not in cache:
+            cache[url] = page_identity(fetch(url) if url else None, phones, street)
+        r["identity"] = cache[url]
+        return r["position"] if r["identity"] == THEM else None
+    return None
 
 
 # ------------------------------------------------ the prospect's own listing among competitors --
